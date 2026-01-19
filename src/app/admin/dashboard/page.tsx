@@ -1,0 +1,679 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+    Plus, Trash2, Edit2, Printer, History, Users, QrCode,
+    CheckCircle, XCircle, Loader2, Save, AlertCircle, RefreshCw,
+    Upload, FileSpreadsheet, LayoutGrid, RotateCcw, ShieldAlert
+} from 'lucide-react'
+import QRCode from 'qrcode'
+
+interface Party {
+    id: number
+    name: string
+    number: number
+}
+
+interface PrintLog {
+    id: number
+    batch_id: string
+    token_count: number
+    station_level: string | null
+    printed_at: string
+    printed_by: string | null
+}
+
+interface Stats {
+    parties: number
+    tokens: { inactive: number; activated: number; used: number }
+    students: { total: number; voted: number }
+}
+
+interface GeneratedToken {
+    code: string
+    qrDataUrl: string
+}
+
+export default function AdminDashboardPage() {
+    const [activeTab, setActiveTab] = useState<'parties' | 'tokens' | 'students' | 'history' | 'stats'>('parties')
+    const [parties, setParties] = useState<Party[]>([])
+    const [printLogs, setPrintLogs] = useState<PrintLog[]>([])
+    const [stats, setStats] = useState<Stats | null>(null)
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
+    const [success, setSuccess] = useState<string | null>(null)
+
+    // Party form state
+    const [showPartyForm, setShowPartyForm] = useState(false)
+    const [editingParty, setEditingParty] = useState<Party | null>(null)
+    const [partyName, setPartyName] = useState('')
+    const [partyNumber, setPartyNumber] = useState('')
+    const [savingParty, setSavingParty] = useState(false)
+
+    // Token generation state
+    const [tokenCount, setTokenCount] = useState('6')
+    const [generatingTokens, setGeneratingTokens] = useState(false)
+    const [generatedTokens, setGeneratedTokens] = useState<GeneratedToken[]>([])
+    const [previewTokenCodes, setPreviewTokenCodes] = useState<string[]>([])
+    const [showPrintPreview, setShowPrintPreview] = useState(false)
+    const [currentBatchId, setCurrentBatchId] = useState('')
+    const [tokenStartNumber, setTokenStartNumber] = useState(1)
+    const [resetting, setResetting] = useState(false)
+    const [confirmingPrint, setConfirmingPrint] = useState(false)
+
+    // CSV upload state
+    const fileInputRef = useRef<HTMLInputElement>(null)
+
+    const [uploading, setUploading] = useState(false)
+
+    useEffect(() => {
+        fetchData()
+    }, [])
+
+    const fetchData = async () => {
+        setLoading(true)
+        try {
+            const [partiesRes, logsRes, statsRes] = await Promise.all([
+                fetch('/api/parties'),
+                fetch('/api/print-logs'),
+                fetch('/api/stats'),
+            ])
+
+            const partiesData = await partiesRes.json()
+            const logsData = await logsRes.json()
+            const statsData = await statsRes.json()
+
+            if (partiesData.success) setParties(partiesData.parties)
+            if (logsData.success) setPrintLogs(logsData.logs)
+            if (statsData.success) setStats(statsData.stats)
+        } catch {
+            setError('ไม่สามารถโหลดข้อมูลได้ เชื่อมต่อล้มเหลว')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    // --- Actions ---
+    const handleSaveParty = async () => {
+        if (!partyName.trim() || !partyNumber) return
+        setSavingParty(true)
+        setError(null)
+        try {
+            const url = editingParty ? `/api/parties/${editingParty.id}` : '/api/parties'
+            const method = editingParty ? 'PUT' : 'POST'
+            const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: partyName.trim(), number: parseInt(partyNumber) }),
+            })
+            const data = await response.json()
+            if (data.success) {
+                await fetchData()
+                resetPartyForm()
+                setSuccess('บันทึกสำเร็จ')
+                setTimeout(() => setSuccess(null), 3000)
+            } else setError(data.message)
+        } catch {
+            setError('เกิดข้อผิดพลาด')
+        } finally {
+            setSavingParty(false)
+        }
+    }
+
+    const handleDeleteParty = async (id: number) => {
+        if (!confirm('ยืนยันการลบ?')) return
+        try {
+            const response = await fetch(`/api/parties/${id}`, { method: 'DELETE' })
+            const data = await response.json()
+            if (data.success) {
+                await fetchData()
+                setSuccess('ลบสำเร็จ')
+                setTimeout(() => setSuccess(null), 3000)
+            } else setError(data.message)
+        } catch { setError('เกิดข้อผิดพลาด') }
+    }
+
+    const handleEditParty = (party: Party) => {
+        setEditingParty(party)
+        setPartyName(party.name)
+        setPartyNumber(party.number.toString())
+        setShowPartyForm(true)
+    }
+
+    const resetPartyForm = () => {
+        setShowPartyForm(false)
+        setEditingParty(null)
+        setPartyName('')
+        setPartyNumber('')
+    }
+
+    const handleGenerateTokens = async () => {
+        const count = parseInt(tokenCount)
+        if (isNaN(count) || count < 1 || count > 120) {
+            setError('กรุณาระบุจำนวน 1-120')
+            return
+        }
+        setGeneratingTokens(true)
+        setError(null)
+        try {
+            // Use preview API - does NOT save to database
+            const response = await fetch('/api/tokens/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ count }),
+            })
+            const data = await response.json()
+            if (data.success) {
+                const tokensWithQR: GeneratedToken[] = await Promise.all(
+                    data.tokens.map(async (code: string) => {
+                        const qrDataUrl = await QRCode.toDataURL(code, {
+                            width: 400,
+                            margin: 0,
+                            color: { dark: '#000000', light: '#ffffff' },
+                            errorCorrectionLevel: 'H',
+                        })
+                        return { code, qrDataUrl }
+                    })
+                )
+                setGeneratedTokens(tokensWithQR)
+                setPreviewTokenCodes(data.tokens)
+                setCurrentBatchId(data.batchId)
+                setTokenStartNumber(data.startNumber || 1)
+                setShowPrintPreview(true)
+                // NOT fetching data here - tokens not saved yet
+            } else setError(data.message)
+        } catch {
+            setError('เกิดข้อผิดพลาดในการสร้าง Token')
+        } finally {
+            setGeneratingTokens(false)
+        }
+    }
+
+    // Confirm print - saves tokens to database
+    const handleConfirmPrint = async () => {
+        setConfirmingPrint(true)
+        try {
+            const response = await fetch('/api/tokens/confirm-print', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tokens: previewTokenCodes,
+                    batchId: currentBatchId,
+                    startNumber: tokenStartNumber,
+                }),
+            })
+            const data = await response.json()
+            if (data.success) {
+                window.print()
+                await fetchData()
+                setSuccess(`พิมพ์และบันทึก ${previewTokenCodes.length} Token`)
+                setTimeout(() => setSuccess(null), 3000)
+            } else {
+                setError(data.message)
+            }
+        } catch {
+            setError('เกิดข้อผิดพลาด')
+        } finally {
+            setConfirmingPrint(false)
+        }
+    }
+
+    // Cancel batch
+    const handleCancelBatch = async (batchId: string) => {
+        if (!confirm(`ยืนยันยกเลิก Batch ${batchId}?`)) return
+        try {
+            const res = await fetch('/api/tokens/cancel-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ batchId }),
+            })
+            const data = await res.json()
+            if (data.success) {
+                await fetchData()
+                setSuccess(data.message)
+                setTimeout(() => setSuccess(null), 3000)
+            } else {
+                setError(data.message)
+            }
+        } catch {
+            setError('เกิดข้อผิดพลาด')
+        }
+    }
+
+    const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+        setUploading(true)
+        setError(null)
+        try {
+            const text = await file.text()
+            const response = await fetch('/api/students/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csvData: text }),
+            })
+            const data = await response.json()
+            if (data.success) {
+                setSuccess(`นำเข้าสำเร็จ ${data.count} รายการ`)
+                setTimeout(() => setSuccess(null), 3000)
+                await fetchData()
+            } else setError(data.message)
+        } catch {
+            setError('เกิดข้อผิดพลาดในการอัปโหลด')
+        } finally {
+            setUploading(false)
+            if (fileInputRef.current) fileInputRef.current.value = ''
+        }
+    }
+
+    const handleClearHistory = async () => {
+        if (!confirm('ยืนยันลบประวัติการพิมพ์ทั้งหมด? ข้อมูล Token จะไม่ถูกลบ')) return
+        setResetting(true)
+        try {
+            const res = await fetch('/api/print-logs/clear', { method: 'POST' })
+            const data = await res.json()
+            if (data.success) {
+                await fetchData()
+                setSuccess('ลบประวัติแล้ว')
+                setTimeout(() => setSuccess(null), 3000)
+            } else setError(data.message)
+        } finally { setResetting(false) }
+    }
+
+    const handleSystemReset = async () => {
+        const code = prompt('พิมพ์ "RESET" เพื่อยืนยันการล้างข้อมูลการเลือกตั้งทั้งหมด (คะแนน, Token, ประวัติ)')
+        if (code !== 'RESET') return
+
+        setResetting(true)
+        try {
+            const res = await fetch('/api/admin/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: 'votes' })
+            })
+            const data = await res.json()
+            if (data.success) {
+                await fetchData()
+                setSuccess('รีเซ็ตระบบเรียบร้อย (Test Mode Reset)')
+                setTimeout(() => setSuccess(null), 3000)
+            } else setError(data.message)
+        } finally { setResetting(false) }
+    }
+
+    // --- Render ---
+
+    if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>
+
+    return (
+        <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+            {/* Header */}
+            <header className="bg-white border-b border-slate-200 sticky top-0 z-30 no-print">
+                <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+                    <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
+                        <LayoutGrid className="w-6 h-6 text-slate-600" />
+                        Admin Dashboard
+                    </h1>
+                    <button onClick={fetchData} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <RefreshCw className="w-5 h-5 text-slate-500" />
+                    </button>
+                </div>
+            </header>
+
+            {/* Tabs */}
+            <div className="bg-white border-b border-slate-200 no-print">
+                <div className="max-w-6xl mx-auto px-6 flex items-center gap-8 overflow-x-auto">
+                    {[
+                        { id: 'parties', label: 'พรรคการเมือง', icon: Users },
+                        { id: 'tokens', label: 'พิมพ์บัตรเลือกตั้ง', icon: Printer },
+                        { id: 'students', label: 'ฐานข้อมูล', icon: FileSpreadsheet },
+                        { id: 'history', label: 'ประวัติ', icon: History },
+                        { id: 'stats', label: 'สถิติ', icon: AlertCircle },
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as any)}
+                            className={`flex items-center gap-2 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
+                                ? 'border-slate-900 text-slate-900'
+                                : 'border-transparent text-slate-500 hover:text-slate-700'
+                                }`}
+                        >
+                            <tab.icon className="w-4 h-4" />
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Content */}
+            <main className="max-w-6xl mx-auto px-6 py-8 no-print">
+                <AnimatePresence>
+                    {error && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-6 p-4 bg-red-50 text-red-700 rounded-lg border border-red-100 flex items-center gap-3">
+                            <AlertCircle className="w-5 h-5" />
+                            {error}
+                            <button onClick={() => setError(null)} className="ml-auto"><XCircle className="w-5 h-5" /></button>
+                        </motion.div>
+                    )}
+                    {success && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-6 p-4 bg-green-50 text-green-700 rounded-lg border border-green-100 flex items-center gap-3">
+                            <CheckCircle className="w-5 h-5" />
+                            {success}
+                        </motion.div>
+                    )}
+                    {activeTab === 'stats' && stats && (
+                        <div className="space-y-6">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                    <p className="text-sm text-slate-500 mb-1">จำนวนพรรค</p>
+                                    <p className="text-3xl font-bold text-slate-900">{stats.parties}</p>
+                                </div>
+                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                    <p className="text-sm text-slate-500 mb-1">Token ทั้งหมด</p>
+                                    <p className="text-3xl font-bold text-blue-600">
+                                        {stats.tokens.inactive + stats.tokens.activated + stats.tokens.used}
+                                    </p>
+                                </div>
+                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                    <p className="text-sm text-slate-500 mb-1">ใช้สิทธิ์แล้ว</p>
+                                    <p className="text-3xl font-bold text-green-600">{stats.students.voted}</p>
+                                </div>
+                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                    <p className="text-sm text-slate-500 mb-1">ยังไม่ใช้สิทธิ์</p>
+                                    <p className="text-3xl font-bold text-orange-500">
+                                        {stats.students.total - stats.students.voted}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Test Mode / Danger Zone */}
+                            <div className="bg-red-50 border border-red-100 rounded-xl p-6 mt-8">
+                                <h3 className="text-lg font-bold text-red-800 flex items-center gap-2 mb-4">
+                                    <ShieldAlert className="w-5 h-5" />
+                                    System Management (Testing)
+                                </h3>
+                                <div className="flex gap-4">
+                                    <button
+                                        onClick={handleClearHistory}
+                                        disabled={resetting}
+                                        className="px-4 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium flex items-center gap-2"
+                                    >
+                                        <History className="w-4 h-4" /> ล้างประวัติการพิมพ์
+                                    </button>
+                                    <button
+                                        onClick={handleSystemReset}
+                                        disabled={resetting}
+                                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center gap-2 shadow-sm"
+                                    >
+                                        <RotateCcw className="w-4 h-4" /> รีเซ็ตระบบเลือกตั้ง
+                                    </button>
+                                </div>
+                                <p className="text-xs text-red-500 mt-4">
+                                    * รีเซ็ตระบบเลือกตั้ง = ลบ Token, คะแนน, และประวัติการพิมพ์ทั้งหมด (เก็บรายชื่อนักเรียนและพรรคไว้)
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'parties' && (
+                        <div className="space-y-6">
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-xl font-bold">พรรคการเมือง</h2>
+                                <button onClick={() => setShowPartyForm(true)} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors">
+                                    <Plus className="w-4 h-4" /> เพิ่มพรรค
+                                </button>
+                            </div>
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {parties.map(p => (
+                                    <div key={p.id} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+                                        <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-xl font-bold text-slate-700">{p.number}</div>
+                                        <div className="flex-1">
+                                            <div className="font-bold text-slate-900">{p.name}</div>
+                                            <div className="text-sm text-slate-500">หมายเลข {p.number}</div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleEditParty(p)} className="p-2 text-slate-400 hover:text-slate-600"><Edit2 className="w-4 h-4" /></button>
+                                            <button onClick={() => handleDeleteParty(p.id)} className="p-2 text-slate-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'tokens' && (
+                        <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+                            <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                                <Printer className="w-6 h-6 text-slate-700" />
+                                พิมพ์บัตรเลือกตั้ง
+                            </h2>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">จำนวนบัตรที่ต้องการพิมพ์</label>
+                                    <div className="flex gap-3">
+                                        <input
+                                            type="number"
+                                            value={tokenCount}
+                                            onChange={e => setTokenCount(e.target.value)}
+                                            className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 outline-none"
+                                            placeholder="เช่น 6, 12, 60"
+                                        />
+                                        <button
+                                            onClick={handleGenerateTokens}
+                                            disabled={generatingTokens}
+                                            className="bg-slate-900 text-white px-8 py-3 rounded-xl font-medium hover:bg-slate-800 disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {generatingTokens ? <Loader2 className="animate-spin w-5 h-5" /> : 'สร้าง Preview'}
+                                        </button>
+                                    </div>
+                                    <p className="text-sm text-slate-500 mt-2">
+                                        * ระบบจะจัดหน้ากระดาษ A4 ให้โดยอัตโนมัติ (6 ใบ/แผ่น)
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'students' && (
+                        <div className="max-w-2xl mx-auto bg-white p-10 rounded-2xl border border-slate-200 shadow-sm text-center">
+                            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <FileSpreadsheet className="w-8 h-8 text-slate-400" />
+                            </div>
+                            <h2 className="text-xl font-bold mb-2">นำเข้าข้อมูลนักเรียน</h2>
+                            <p className="text-slate-500 mb-8">อัปโหลดไฟล์ CSV เพื่ออัปเดตฐานข้อมูล</p>
+                            <input type="file" ref={fileInputRef} onChange={handleCSVUpload} accept=".csv" className="hidden" id="csv" />
+                            <label htmlFor="csv" className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl cursor-pointer hover:bg-slate-800 transition-colors">
+                                {uploading ? <Loader2 className="animate-spin w-5 h-5" /> : <Upload className="w-5 h-5" />}
+                                เลือกไฟล์ CSV
+                            </label>
+                        </div>
+                    )}
+
+                    {activeTab === 'history' && (
+                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-6 py-4 font-semibold text-slate-700">Batch ID</th>
+                                        <th className="px-6 py-4 font-semibold text-slate-700">จำนวน</th>
+                                        <th className="px-6 py-4 font-semibold text-slate-700">เวลาที่สร้าง</th>
+                                        <th className="px-6 py-4 font-semibold text-slate-700 text-center">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {printLogs.map(log => (
+                                        <tr key={log.id} className="hover:bg-slate-50">
+                                            <td className="px-6 py-4 font-mono text-slate-600 text-sm">{log.batch_id}</td>
+                                            <td className="px-6 py-4 text-slate-900">{log.token_count}</td>
+                                            <td className="px-6 py-4 text-slate-500 text-sm">{new Date(log.printed_at).toLocaleString('th-TH')}</td>
+                                            <td className="px-6 py-4 text-center">
+                                                <button
+                                                    onClick={() => handleCancelBatch(log.batch_id)}
+                                                    className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium flex items-center gap-1 mx-auto"
+                                                >
+                                                    <Trash2 className="w-4 h-4" /> ยกเลิก
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {printLogs.length === 0 && (
+                                <div className="p-8 text-center text-slate-400">ยังไม่มีประวัติการพิมพ์</div>
+                            )}
+                        </div>
+                    )}
+                </AnimatePresence>
+            </main>
+
+            {/* Modals */}
+            {showPartyForm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+                        <h3 className="text-lg font-bold mb-4">{editingParty ? 'แก้ไขพรรค' : 'เพิ่มพรรค'}</h3>
+                        <div className="space-y-3">
+                            <input type="number" placeholder="เบอร์" value={partyNumber} onChange={e => setPartyNumber(e.target.value)} className="w-full border p-3 rounded-lg" />
+                            <input type="text" placeholder="ชื่อพรรค" value={partyName} onChange={e => setPartyName(e.target.value)} className="w-full border p-3 rounded-lg" />
+                        </div>
+                        <div className="flex gap-3 mt-6">
+                            <button onClick={resetPartyForm} className="flex-1 py-3 text-slate-600 hover:bg-slate-50 rounded-lg">ยกเลิก</button>
+                            <button onClick={handleSaveParty} className="flex-1 py-3 bg-slate-900 text-white rounded-lg">บันทึก</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showPrintPreview && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/90 flex flex-col no-print">
+                    <div className="bg-white p-4 flex justify-between items-center shadow-md z-10">
+                        <div>
+                            <h2 className="font-bold text-lg">Print Preview</h2>
+                            <p className="text-sm text-slate-500">{generatedTokens.length} บัตร (A4 {Math.ceil(generatedTokens.length / 6)} แผ่น) - <span className="text-amber-600 font-medium">ยังไม่บันทึก</span></p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={() => { setShowPrintPreview(false); setGeneratedTokens([]); setPreviewTokenCodes([]) }} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">ยกเลิก</button>
+                            <button
+                                onClick={handleConfirmPrint}
+                                disabled={confirmingPrint}
+                                className="px-6 py-2 bg-green-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-green-700 disabled:opacity-50"
+                            >
+                                {confirmingPrint ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                                พิมพ์และบันทึก
+                            </button>
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-auto p-8 bg-slate-500">
+                        <div className="flex flex-col items-center gap-8">
+                            {/* Show ALL pages in preview */}
+                            <PrintLayout tokens={generatedTokens} batchId={currentBatchId} startNumber={tokenStartNumber} debugMode />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Hidden Print Layout */}
+            <div className="hidden print:block">
+                <PrintLayout tokens={generatedTokens} batchId={currentBatchId} startNumber={tokenStartNumber} />
+            </div>
+        </div>
+    )
+}
+
+// ----------------------------------------------------------------------
+// Perfect A4 Layout: 6 Cards (2 cols x 3 rows)
+// ----------------------------------------------------------------------
+function PrintLayout({ tokens, batchId, startNumber, debugMode = false }: { tokens: GeneratedToken[]; batchId: string; startNumber: number; debugMode?: boolean }) {
+    const pages = []
+    for (let i = 0; i < tokens.length; i += 6) {
+        pages.push(tokens.slice(i, i + 6))
+    }
+
+    return (
+        <>
+            <style jsx global>{`
+        @media print {
+          @page {
+            size: A4;
+            margin: 0;
+          }
+          html, body {
+            margin: 0;
+            padding: 0;
+            width: 210mm;
+            height: 297mm;
+          }
+        }
+        .a4-page {
+          width: 210mm;
+          height: 296mm; 
+          background: white;
+          padding: 5mm; /* Reduced padding from 10mm to 5mm to prevent overflow */
+          box-sizing: border-box;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows: 1fr 1fr 1fr;
+          gap: 0;
+          page-break-after: always;
+        }
+        .ballot-card {
+          border: 1px dashed #d1d5db;
+          margin: 1px; /* Slight separation */
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 8px; /* Reduced padding inside card */
+          justify-content: space-between;
+          height: 100%;
+        }
+      `}</style>
+
+            {pages.map((pageTokens, pageIndex) => (
+                <div key={pageIndex} className="a4-page">
+                    {pageTokens.map((token, index) => {
+                        const globalIndex = pageIndex * 6 + index
+                        const currentNumber = startNumber + globalIndex
+                        return (
+                            <div key={token.code} className="ballot-card">
+                                {/* Header & Logo */}
+                                <div className="w-full flex items-center justify-between border-b-2 border-slate-900 pb-1.5 mb-1">
+                                    {/* Logo - put logo.png in /public folder */}
+                                    <img
+                                        src="/logo.png"
+                                        alt="Logo"
+                                        className="w-10 h-10 object-contain"
+                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                                    />
+                                    <div className="text-right">
+                                        <h1 className="text-base font-extrabold text-slate-900 leading-none tracking-tight">RSL SMART VOTE</h1>
+                                        <p className="text-[8px] text-slate-500 font-semibold uppercase">Student Council Election 2569</p>
+                                    </div>
+                                </div>
+
+                                {/* QR Code - LARGER */}
+                                <div className="flex-1 flex flex-col items-center justify-center py-1">
+                                    <div className="p-1 border-2 border-slate-900 rounded-lg">
+                                        <img src={token.qrDataUrl} alt="QR" className="w-[130px] h-[130px] object-contain block" style={{ imageRendering: 'pixelated' }} />
+                                    </div>
+                                    <p className="text-xl font-mono font-bold text-slate-900 tracking-[0.15em] mt-1">{token.code}</p>
+                                </div>
+
+                                {/* Instructions - Compact */}
+                                <div className="w-full text-left bg-slate-50 p-1.5 rounded border border-slate-100 mb-1">
+                                    <p className="text-[7px] text-slate-600 leading-tight">
+                                        <span className="font-bold">วิธีใช้:</span> สแกน QR ที่จุดลงคะแนน → เลือกเบอร์ → ยืนยัน (1 คน 1 เสียง)
+                                    </p>
+                                </div>
+
+                                {/* Footer */}
+                                <div className="w-full flex justify-between items-end border-t border-slate-200 pt-1">
+                                    <span className="text-[8px] font-mono text-slate-400">{batchId}</span>
+                                    <span className="text-[10px] font-bold text-slate-900">NO. {currentNumber}/2569</span>
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            ))}
+        </>
+    )
+}

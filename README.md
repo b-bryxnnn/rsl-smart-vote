@@ -1,36 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RSL Smart Vote - ระบบเลือกตั้งสภานักเรียน
 
-## Getting Started
+ระบบเลือกตั้งสภานักเรียนออนไลน์ที่รองรับ Traffic สูง และมีความปลอดภัย
 
-First, run the development server:
+## 🚀 วิธีติดตั้ง
 
 ```bash
+# 1. ติดตั้ง dependencies
+npm install
+
+# 2. รัน development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# 3. เปิดเบราว์เซอร์ไปที่
+# http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 📂 โครงสร้างระบบ
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+src/
+├── app/
+│   ├── page.tsx              # หน้าแรก - สแกน QR / กรอกรหัส
+│   ├── vote/page.tsx         # หน้าลงคะแนน
+│   ├── success/page.tsx      # หน้าสำเร็จ
+│   ├── verify/page.tsx       # หน้าตรวจสอบตัวตน (กรรมการ)
+│   ├── station-setup/        # ตั้งค่าจุดเลือกตั้ง
+│   ├── admin/dashboard/      # แดชบอร์ด Admin
+│   ├── live-score/           # แสดงผลคะแนน (จอ LED)
+│   └── api/                  # API Routes
+├── lib/
+│   ├── db.ts                 # Database utilities
+│   └── utils.ts              # Helper functions
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🔐 หน้าต่างๆ
 
-## Learn More
+| URL | หน้าที่ | การเข้าถึง |
+|-----|--------|----------|
+| `/` | สแกน QR เพื่อโหวต | สาธารณะ |
+| `/vote` | เลือกพรรค | ต้องมี Token |
+| `/verify` | กรรมการตรวจสอบตัวตน | กรรมการ |
+| `/station-setup` | ตั้งค่าระดับชั้น | PIN: 1234 |
+| `/admin/dashboard` | จัดการระบบ | Admin |
+| `/live-score` | แสดงผลคะแนน | สาธารณะ |
 
-To learn more about Next.js, take a look at the following resources:
+## 📊 ขั้นตอนการใช้งาน
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 1. ตั้งค่าระบบ (Admin)
+1. ไปที่ `/admin/dashboard`
+2. เพิ่มพรรคที่จะลงเลือกตั้ง
+3. สร้าง Token (บัตรเลือกตั้ง)
+4. พิมพ์บัตรเลือกตั้ง
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 2. ตั้งค่าจุดเลือกตั้ง
+1. ไปที่ `/station-setup`
+2. ใส่ PIN: 1234
+3. เลือกระดับชั้นสำหรับเครื่องนี้
 
-## Deploy on Vercel
+### 3. จุดลงทะเบียน (กรรมการ)
+1. เปิดหน้า `/verify`
+2. กรอกรหัสนักเรียน
+3. ตรวจสอบชื่อ-นามสกุล
+4. สแกน QR บัตรเลือกตั้งเพื่อเปิดสิทธิ์
+5. มอบบัตรให้นักเรียน
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 4. จุดลงคะแนน (นักเรียน)
+1. นักเรียนสแกน QR หรือกรอกรหัส
+2. เลือกพรรคที่ต้องการ
+3. ยืนยันการเลือก
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 5. แสดงผลคะแนน
+1. เปิด `/live-score` บนจอ LED
+2. ข้อมูลอัปเดตทุก 5 นาที
+
+## 🗃️ นำเข้าข้อมูลนักเรียน
+
+สร้างไฟล์ CSV แล้วใส่ใน Database:
+
+```csv
+student_id,prefix,first_name,last_name,level,room
+12345,นาย,สมชาย,ใจดี,ม.4,1
+12346,นางสาว,สมหญิง,รักเรียน,ม.4,1
+```
+
+## ⚠️ หมายเหตุ
+
+- Token มี 3 สถานะ: `inactive` → `activated` → `used`
+- บัตรที่ยังไม่ activate ใช้โหวตไม่ได้
+- 1 นักเรียน = 1 สิทธิ์
+- ไม่มีการผูก Token กับตัวตนเพื่อรักษาความลับ
+
+## 🛠️ Tech Stack
+
+- Next.js 15 (App Router)
+- Tailwind CSS
+- SQLite (better-sqlite3)
+- Framer Motion
+- Recharts
+- html5-qrcode
