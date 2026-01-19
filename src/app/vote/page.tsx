@@ -24,7 +24,7 @@ export default function VotePage() {
         const token = sessionStorage.getItem('voting_token')
         if (!token) return router.push('/')
         fetch('/api/parties')
-            .then(res => res.json())
+            .then(res => res.json() as any)
             .then(data => {
                 if (data.success) setParties(data.parties)
             })
@@ -47,7 +47,7 @@ export default function VotePage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token, partyId: selectedParty?.id, isAbstain }),
             })
-            if ((await res.json()).success) {
+            if ((await res.json() as any).success) {
                 sessionStorage.removeItem('voting_token')
                 router.push('/success')
             }

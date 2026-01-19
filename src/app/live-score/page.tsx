@@ -11,7 +11,7 @@ export default function LiveScorePage() {
     useEffect(() => {
         const fetchScores = async () => {
             const res = await fetch('/api/scores')
-            const json = await res.json()
+            const json = await res.json() as any
             if (json.success) setData(json.data)
         }
         fetchScores()

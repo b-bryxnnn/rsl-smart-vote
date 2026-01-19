@@ -29,7 +29,7 @@ export default function VerifyPage() {
         setLoading(true)
         try {
             const res = await fetch(`/api/students/${studentId}`)
-            const data = await res.json()
+            const data = await res.json() as any
             if (data.success) {
                 setStudent(data.student)
                 setStep('verify')
@@ -45,7 +45,7 @@ export default function VerifyPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tokenCode: code, studentId: student?.student_id })
             })
-            const data = await res.json()
+            const data = await res.json() as any
             if (data.success) {
                 if (scannerRef.current?.isScanning) scannerRef.current.stop()
                 setStep('success')

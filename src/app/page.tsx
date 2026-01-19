@@ -55,7 +55,7 @@ export default function HomePage() {
         body: JSON.stringify({ code: code.toUpperCase() }),
       })
 
-      const data = await response.json()
+      const data = await response.json() as any
 
       if (data.success) {
         sessionStorage.setItem('voting_token', code.toUpperCase())
