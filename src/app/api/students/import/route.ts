@@ -14,7 +14,7 @@ interface StudentRow {
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json()
+        const body = await request.json() as any
         const { csvData } = body
 
         if (!csvData || typeof csvData !== 'string') {

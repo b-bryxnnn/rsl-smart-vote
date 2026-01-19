@@ -6,7 +6,7 @@ export const runtime = 'edge'
 // Confirm print - saves tokens to database
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json()
+        const body = await request.json() as any
         const { tokens, batchId, stationLevel, printedBy } = body
 
         if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {

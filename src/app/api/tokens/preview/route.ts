@@ -6,7 +6,7 @@ export const runtime = 'edge'
 // Preview only - does NOT save to database
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json()
+        const body = await request.json() as any
         const { count } = body
 
         const tokenCount = parseInt(count)
