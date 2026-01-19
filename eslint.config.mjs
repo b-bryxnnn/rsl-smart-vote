@@ -10,11 +10,13 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
-  ...compat.extends("next/core-web-vitals"),
+  // Extend core web vitals and typescript configs via compat
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     ignores: [".next/**", "out/**", "build/**", ".vercel/**"],
   },
   {
+    // Override rules - no plugins used here directly, relies on extended configs
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "warn",

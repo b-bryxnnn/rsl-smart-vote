@@ -80,9 +80,9 @@ export default function AdminDashboardPage() {
                 fetch('/api/stats'),
             ])
 
-            const partiesData = await partiesRes.json()
-            const logsData = await logsRes.json()
-            const statsData = await statsRes.json()
+            const partiesData = await partiesRes.json() as any
+            const logsData = await logsRes.json() as any
+            const statsData = await statsRes.json() as any
 
             if (partiesData.success) setParties(partiesData.parties)
             if (logsData.success) setPrintLogs(logsData.logs)
@@ -107,7 +107,7 @@ export default function AdminDashboardPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: partyName.trim(), number: parseInt(partyNumber) }),
             })
-            const data = await response.json()
+            const data = await response.json() as any
             if (data.success) {
                 await fetchData()
                 resetPartyForm()
@@ -125,7 +125,7 @@ export default function AdminDashboardPage() {
         if (!confirm('ยืนยันการลบ?')) return
         try {
             const response = await fetch(`/api/parties/${id}`, { method: 'DELETE' })
-            const data = await response.json()
+            const data = await response.json() as any
             if (data.success) {
                 await fetchData()
                 setSuccess('ลบสำเร็จ')
@@ -163,7 +163,7 @@ export default function AdminDashboardPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ count }),
             })
-            const data = await response.json()
+            const data = await response.json() as any
             if (data.success) {
                 const tokensWithQR: GeneratedToken[] = await Promise.all(
                     data.tokens.map(async (code: string) => {
@@ -203,7 +203,7 @@ export default function AdminDashboardPage() {
                     startNumber: tokenStartNumber,
                 }),
             })
-            const data = await response.json()
+            const data = await response.json() as any
             if (data.success) {
                 window.print()
                 await fetchData()
@@ -228,7 +228,7 @@ export default function AdminDashboardPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ batchId }),
             })
-            const data = await res.json()
+            const data = await res.json() as any
             if (data.success) {
                 await fetchData()
                 setSuccess(data.message)
@@ -253,7 +253,7 @@ export default function AdminDashboardPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ csvData: text }),
             })
-            const data = await response.json()
+            const data = await response.json() as any
             if (data.success) {
                 setSuccess(`นำเข้าสำเร็จ ${data.count} รายการ`)
                 setTimeout(() => setSuccess(null), 3000)
@@ -272,7 +272,7 @@ export default function AdminDashboardPage() {
         setResetting(true)
         try {
             const res = await fetch('/api/print-logs/clear', { method: 'POST' })
-            const data = await res.json()
+            const data = await res.json() as any
             if (data.success) {
                 await fetchData()
                 setSuccess('ลบประวัติแล้ว')
@@ -292,7 +292,7 @@ export default function AdminDashboardPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: 'votes' })
             })
-            const data = await res.json()
+            const data = await res.json() as any
             if (data.success) {
                 await fetchData()
                 setSuccess('รีเซ็ตระบบเรียบร้อย (Test Mode Reset)')
