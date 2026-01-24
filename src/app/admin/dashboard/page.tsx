@@ -162,38 +162,50 @@ export default function AdminDashboardPage() {
 
     const fetchData = async () => {
         setLoading(true)
+        const headers = { 'Authorization': `Bearer ${sessionToken}` }
+
+        // Fetch each independently to prevent one error blocking all data
         try {
-            const headers = { 'Authorization': `Bearer ${sessionToken}` }
-            const [partiesRes, printLogsRes, statsRes, usersRes, statusRes, logsRes] = await Promise.all([
-                fetch('/api/parties'),
-                fetch('/api/print-logs', { headers }),
-                fetch('/api/stats'),
-                fetch('/api/users', { headers }), // Requires Auth
-                fetch('/api/election-status', { headers }),
-                fetch('/api/activity-logs', { headers }) // Requires Auth
-            ])
+            // Parties
+            fetch('/api/parties').then(res => res.json()).then((data: any) => {
+                if (data.success) setParties(data.parties)
+            }).catch(console.error)
 
-            const partiesData = await partiesRes.json() as any
-            const logsData = await logsRes.json() as any
-            const statsData = await statsRes.json() as any
-            const usersData = await usersRes.json() as any
-            const statusData = await statusRes.json() as any
-            const activityLogsData = await logsRes.json() as any
+            // Print Logs
+            fetch('/api/print-logs', { headers }).then(res => res.json()).then((data: any) => {
+                if (data.success) setPrintLogs(data.logs)
+            }).catch(console.error)
 
-            if (partiesData.success) setParties(partiesData.parties)
-            if (logsData.success) setPrintLogs(logsData.logs)
-            if (statsData.success) setStats(statsData.stats)
-            if (usersData.success) setUsers(usersData.users)
-            if (statusData.success) {
-                setElectionStatus(statusData.status)
-                setScheduledOpen(statusData.scheduledOpenTime || '')
-                setScheduledClose(statusData.scheduledCloseTime || '')
-            }
-            if (activityLogsData.success) setActivityLogs(activityLogsData.logs)
-        } catch {
-            setError('ไม่สามารถโหลดข้อมูลได้ เชื่อมต่อล้มเหลว')
+            // Stats
+            fetch('/api/stats').then(res => res.json()).then((data: any) => {
+                if (data.success) setStats(data.stats)
+            }).catch(console.error)
+
+            // Users (Auth Required)
+            fetch('/api/users', { headers }).then(res => res.json()).then((data: any) => {
+                if (data.success) setUsers(data.users)
+            }).catch(console.error)
+
+            // Election Status (Auth Required)
+            fetch('/api/election-status', { headers }).then(res => res.json()).then((data: any) => {
+                if (data.success) {
+                    setElectionStatus(data.status)
+                    setScheduledOpen(data.scheduledOpenTime || '')
+                    setScheduledClose(data.scheduledCloseTime || '')
+                }
+            }).catch(console.error)
+
+            // Activity Logs (Auth Required)
+            fetch('/api/activity-logs', { headers }).then(res => res.json()).then((data: any) => {
+                if (data.success) setActivityLogs(data.logs)
+            }).catch(console.error)
+
+        } catch (e) {
+            console.error(e)
+            setError('เกิดข้อผิดพลาดบางอย่างในการโหลดข้อมูล')
         } finally {
-            setLoading(false)
+            // Wait a bit just to ensure UI doesn't flash too fast
+            setTimeout(() => setLoading(false), 500)
         }
     }
 
