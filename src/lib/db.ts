@@ -71,7 +71,7 @@ const mockStudents: Student[] = [
 
 let tokenIdCounter = 1
 let voteIdCounter = 1
-let printLogIdCounter = 1
+const printLogIdCounter = 1
 
 // Check if we're running locally (D1 not available)
 function isLocalDev(): boolean {
