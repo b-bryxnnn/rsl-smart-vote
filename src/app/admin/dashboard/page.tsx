@@ -417,7 +417,7 @@ export default function AdminDashboardPage() {
                                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                                         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                                             <h3 className="font-bold text-slate-800">สถิติการใช้สิทธิ์แยกตามชั้นปี</h3>
-                                            <span className="text-xs text-slate-500 font-normal">* ข้อมูลจะแสดงเมื่อมีการนำเข้า 'ฐานข้อมูลรายชื่อ'</span>
+                                            <span className="text-xs text-slate-500 font-normal">* ข้อมูลจะแสดงเมื่อมีการนำเข้า &quot;ฐานข้อมูลรายชื่อ&quot;</span>
                                         </div>
                                         {stats.studentsByLevel && stats.studentsByLevel.length > 0 ? (
                                             <table className="w-full text-left">
@@ -454,7 +454,7 @@ export default function AdminDashboardPage() {
                                             </table>
                                         ) : (
                                             <div className="p-8 text-center text-slate-400 bg-slate-50/50">
-                                                ยังไม่มีข้อมูลนักเรียน (กรุณาไปที่เมนู 'ฐานข้อมูล' เพื่อนำเข้าไฟล์ Excel)
+                                                ยังไม่มีข้อมูลนักเรียน (กรุณาไปที่เมนู &quot;ฐานข้อมูล&quot; เพื่อนำเข้าไฟล์ Excel)
                                             </div>
                                         )}
                                     </div>
@@ -518,13 +518,13 @@ export default function AdminDashboardPage() {
                                                 >
                                                     <History className="w-4 h-4" /> ล้างประวัติการพิมพ์
                                                 </button>
-                                                <p className="text-xs text-slate-500 text-center">ลบรายการในหน้า 'ประวัติ' (History) เท่านั้น ข้อมูลอื่นยังอยู่ครบ</p>
+                                                <p className="text-xs text-slate-500 text-center">ลบรายการในหน้า &quot;ประวัติ&quot; (History) เท่านั้น ข้อมูลอื่นยังอยู่ครบ</p>
                                             </div>
 
                                             <div className="flex flex-col gap-2">
                                                 <button
                                                     onClick={async () => {
-                                                        if (!confirm('ยืนยันลบ \'รายชื่อนักเรียน\' ทั้งหมด? (ข้อมูลอื่นๆ จะยังอยู่)')) return
+                                                        if (!confirm('ยืนยันลบ "รายชื่อนักเรียน" ทั้งหมด? (ข้อมูลอื่นๆ จะยังอยู่)')) return
                                                         setResetting(true)
                                                         try {
                                                             const res = await fetch('/api/admin/reset', {
@@ -577,7 +577,7 @@ export default function AdminDashboardPage() {
                                             <div className="flex flex-col gap-2">
                                                 <button
                                                     onClick={async () => {
-                                                        const code = prompt('⚠️ อันตราย: พิมพ์ \'FACTORY RESET\' เพื่อล้างข้อมูลทุกอย่าง (นักเรียน, พรรค, คะแนน, LOG)')
+                                                        const code = prompt('⚠️ อันตราย: พิมพ์ "FACTORY RESET" เพื่อล้างข้อมูลทุกอย่าง (นักเรียน, พรรค, คะแนน, LOG)')
                                                         if (code !== 'FACTORY RESET') return
                                                         setResetting(true)
                                                         try {
