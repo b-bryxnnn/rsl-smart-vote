@@ -60,6 +60,20 @@ export default function AdminDashboardPage() {
     const [partyNumber, setPartyNumber] = useState('')
     const [savingParty, setSavingParty] = useState(false)
 
+    // User Management State
+    const [users, setUsers] = useState<any[]>([])
+    const [showUserModal, setShowUserModal] = useState(false)
+    const [editingUser, setEditingUser] = useState<any | null>(null)
+    const [userForm, setUserForm] = useState({ username: '', password: '', role: 'committee', displayName: '' })
+
+    // System Settings State
+    const [electionStatus, setElectionStatus] = useState<'open' | 'closed' | 'scheduled'>('closed')
+    const [scheduledOpen, setScheduledOpen] = useState('')
+    const [scheduledClose, setScheduledClose] = useState('')
+
+    // Logs State
+    const [activityLogs, setActivityLogs] = useState<any[]>([])
+
     // Token generation state
     const [tokenCount, setTokenCount] = useState('6')
     const [generatingTokens, setGeneratingTokens] = useState(false)
@@ -149,19 +163,32 @@ export default function AdminDashboardPage() {
     const fetchData = async () => {
         setLoading(true)
         try {
-            const [partiesRes, logsRes, statsRes] = await Promise.all([
+            const [partiesRes, logsRes, statsRes, usersRes, statusRes, activityLogsRes] = await Promise.all([
                 fetch('/api/parties'),
                 fetch('/api/print-logs'),
                 fetch('/api/stats'),
+                fetch('/api/users'),
+                fetch('/api/election-status'),
+                fetch('/api/activity-logs')
             ])
 
             const partiesData = await partiesRes.json() as any
             const logsData = await logsRes.json() as any
             const statsData = await statsRes.json() as any
+            const usersData = await usersRes.json() as any
+            const statusData = await statusRes.json() as any
+            const activityLogsData = await activityLogsRes.json() as any
 
             if (partiesData.success) setParties(partiesData.parties)
             if (logsData.success) setPrintLogs(logsData.logs)
             if (statsData.success) setStats(statsData.stats)
+            if (usersData.success) setUsers(usersData.users)
+            if (statusData.success) {
+                setElectionStatus(statusData.status)
+                setScheduledOpen(statusData.scheduledOpenTime || '')
+                setScheduledClose(statusData.scheduledCloseTime || '')
+            }
+            if (activityLogsData.success) setActivityLogs(activityLogsData.logs)
         } catch {
             setError('ไม่สามารถโหลดข้อมูลได้ เชื่อมต่อล้มเหลว')
         } finally {
@@ -388,6 +415,76 @@ export default function AdminDashboardPage() {
         } finally { setResetting(false) }
     }
 
+    const handleUpdateStatus = async (status: 'open' | 'closed' | 'scheduled') => {
+        try {
+            const res = await fetch('/api/election-status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, scheduledOpenTime: scheduledOpen, scheduledCloseTime: scheduledClose })
+            })
+            const data = await res.json() as any
+            if (data.success) {
+                setElectionStatus(status)
+                setSuccess('อัปเดตสถานะสำเร็จ')
+                setTimeout(() => setSuccess(null), 3000)
+            } else setError(data.message)
+        } catch { setError('อัปเดตล้มเหลว') }
+    }
+
+    const resetUserForm = () => {
+        setUserForm({ username: '', password: '', role: 'committee', displayName: '' })
+        setEditingUser(null)
+        setShowUserModal(false)
+    }
+
+    const handleEditUser = (user: any) => {
+        setEditingUser(user)
+        setUserForm({
+            username: user.username,
+            password: '',
+            role: user.role,
+            displayName: user.display_name || ''
+        })
+        setShowUserModal(true)
+    }
+
+    const handleSaveUser = async () => {
+        if (!userForm.username) return setError('กรุณาระบุ Username')
+        if (!editingUser && !userForm.password) return setError('กรุณาระบุ Password')
+
+        try {
+            const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users'
+            const method = editingUser ? 'PUT' : 'POST'
+
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userForm)
+            })
+            const data = await res.json() as any
+
+            if (data.success) {
+                setSuccess(editingUser ? 'แก้ไขผู้ใช้สำเร็จ' : 'สร้างผู้ใช้สำเร็จ')
+                setTimeout(() => setSuccess(null), 3000)
+                resetUserForm()
+                fetchData()
+            } else setError(data.message)
+        } catch { setError('บันทึกผู้ใช้ล้มเหลว') }
+    }
+
+    const handleDeleteUser = async (id: number) => {
+        if (!confirm('ยืนยันลบผู้ใช้นี้?')) return
+        try {
+            const res = await fetch(`/api/users/${id}`, { method: 'DELETE' })
+            const data = await res.json() as any
+            if (data.success) {
+                setSuccess('ลบผู้ใช้สำเร็จ')
+                setTimeout(() => setSuccess(null), 3000)
+                fetchData()
+            } else setError(data.message)
+        } catch { setError('ลบผู้ใช้ล้มเหลว') }
+    }
+
     // --- Render ---
 
     // Auth loading
@@ -426,6 +523,8 @@ export default function AdminDashboardPage() {
                         { id: 'students', label: 'ฐานข้อมูล', icon: FileSpreadsheet },
                         { id: 'history', label: 'ประวัติ', icon: History },
                         { id: 'stats', label: 'สถิติ', icon: AlertCircle },
+                        { id: 'settings', label: 'ตั้งค่า & ผู้ใช้', icon: Settings },
+                        { id: 'logs', label: 'Logs', icon: ClipboardList },
                     ].map(tab => (
                         <button
                             key={`tab-${tab.id}`}
@@ -797,7 +896,147 @@ export default function AdminDashboardPage() {
                         </motion.div>
                     )}
                 </AnimatePresence>
+                {activeTab === 'settings' && (
+                    <motion.div key="settings-view" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="space-y-6">
+                        {/* Election Status Control */}
+                        <div className="bg-white rounded-xl shadow border border-slate-200 p-6">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Settings className="w-5 h-5" /> ควบคุมระบบเลือกตั้ง</h2>
+                            <div className="flex flex-wrap gap-4 mb-4">
+                                <button
+                                    onClick={() => handleUpdateStatus('open')}
+                                    className={`px-4 py-2 rounded-lg font-bold flex items-center gap-2 ${electionStatus === 'open' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                >
+                                    <CheckCircle className="w-4 h-4" /> เปิดระบบ
+                                </button>
+                                <button
+                                    onClick={() => handleUpdateStatus('closed')}
+                                    className={`px-4 py-2 rounded-lg font-bold flex items-center gap-2 ${electionStatus === 'closed' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                >
+                                    <XCircle className="w-4 h-4" /> ปิดระบบ
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">เวลาเปิดอัตโนมัติ</label>
+                                    <input type="datetime-local" value={scheduledOpen} onChange={e => setScheduledOpen(e.target.value)} className="w-full border p-2 rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">เวลาปิดอัตโนมัติ</label>
+                                    <input type="datetime-local" value={scheduledClose} onChange={e => setScheduledClose(e.target.value)} className="w-full border p-2 rounded-lg" />
+                                </div>
+                            </div>
+                            <button onClick={() => handleUpdateStatus('scheduled')} className="mt-4 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800">บันทึกเวลา</button>
+                        </div>
+
+                        {/* User Management */}
+                        <div className="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
+                            <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                                <h2 className="text-xl font-bold flex items-center gap-2"><Users className="w-5 h-5" /> จัดการผู้ใช้งาน</h2>
+                                <button onClick={() => { resetUserForm(); setShowUserModal(true) }} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-green-700">
+                                    <Plus className="w-4 h-4" /> เพิ่มผู้ใช้
+                                </button>
+                            </div>
+                            <table className="w-full">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Username</th>
+                                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">ชื่อแสดงผล</th>
+                                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">สิทธิ์</th>
+                                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {users.map(user => (
+                                        <tr key={user.id} className="hover:bg-slate-50">
+                                            <td className="px-6 py-4 text-sm font-medium text-slate-900">{user.username}</td>
+                                            <td className="px-6 py-4 text-sm text-slate-500">{user.display_name}</td>
+                                            <td className="px-6 py-4 text-sm">
+                                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                    {user.role}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                                <button onClick={() => handleEditUser(user)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteUser(user.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </motion.div>
+                )}
+
+                {activeTab === 'logs' && (
+                    <motion.div key="logs-view" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="space-y-6">
+                        <div className="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
+                            <div className="p-6 border-b border-slate-200 bg-slate-50">
+                                <h2 className="text-xl font-bold flex items-center gap-2"><ClipboardList className="w-5 h-5" /> บันทึกการใช้งาน (Activity Logs)</h2>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead className="bg-slate-50 border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">เวลา</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">ผู้ใช้</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">กิจกรรม</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">รายละเอียด</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">IP</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {activityLogs.map(log => (
+                                            <tr key={log.id} className="hover:bg-slate-50">
+                                                <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">
+                                                    {new Date(log.created_at).toLocaleString('th-TH')}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm font-medium text-slate-900">{log.user_username || 'System'}</td>
+                                                <td className="px-6 py-4 text-sm text-slate-700 font-medium">{log.action}</td>
+                                                <td className="px-6 py-4 text-sm text-slate-500 max-w-xs truncate">{log.details}</td>
+                                                <td className="px-6 py-4 text-sm text-slate-400 font-mono text-xs">{log.ip_address}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
             </main>
+
+            {/* User Modal */}
+            {showUserModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+                        <h3 className="text-lg font-bold mb-4">{editingUser ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งาน'}</h3>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500">Username</label>
+                                <input type="text" placeholder="username" value={userForm.username} onChange={e => setUserForm({ ...userForm, username: e.target.value })} className="w-full border p-2 rounded-lg" disabled={!!editingUser} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500">ชื่อแสดงผล</label>
+                                <input type="text" placeholder="ชื่อสกุล" value={userForm.displayName} onChange={e => setUserForm({ ...userForm, displayName: e.target.value })} className="w-full border p-2 rounded-lg" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500">รหัสผ่าน {editingUser && '(เว้นว่างหากไม่เปลี่ยน)'}</label>
+                                <input type="password" placeholder="password" value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} className="w-full border p-2 rounded-lg" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500">สิทธิ์การใช้งาน</label>
+                                <select value={userForm.role} onChange={e => setUserForm({ ...userForm, role: e.target.value })} className="w-full border p-2 rounded-lg">
+                                    <option value="committee">Committee (กรรมการ)</option>
+                                    <option value="admin">Admin (ผู้ดูแลระบบ)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 mt-6">
+                            <button onClick={resetUserForm} className="flex-1 py-3 text-slate-600 hover:bg-slate-50 rounded-lg">ยกเลิก</button>
+                            <button onClick={handleSaveUser} className="flex-1 py-3 bg-slate-900 text-white rounded-lg">บันทึก</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modals */}
             {showPartyForm && (
