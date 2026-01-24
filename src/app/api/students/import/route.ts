@@ -126,7 +126,7 @@ function parseExcel(base64Data: string): StudentRow[] {
         let currentLevel = ''
         let currentRoom = ''
         let headerFound = false
-        let colMap: Record<string, number> = {}
+        const colMap: Record<string, number> = {}
 
         // 1. Try to detect Level/Room from Sheet Name (e.g. "ม.1", "1-1")
         if (sheetName.includes('ม.')) {

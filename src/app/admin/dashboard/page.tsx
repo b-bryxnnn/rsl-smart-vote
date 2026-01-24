@@ -306,25 +306,7 @@ export default function AdminDashboardPage() {
         } finally { setResetting(false) }
     }
 
-    const handleSystemReset = async () => {
-        const code = prompt('พิมพ์ "RESET" เพื่อยืนยันการล้างข้อมูลการเลือกตั้งทั้งหมด (คะแนน, Token, ประวัติ)')
-        if (code !== 'RESET') return
 
-        setResetting(true)
-        try {
-            const res = await fetch('/api/admin/reset', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: 'votes' })
-            })
-            const data = await res.json() as any
-            if (data.success) {
-                await fetchData()
-                setSuccess('รีเซ็ตระบบเรียบร้อย (Test Mode Reset)')
-                setTimeout(() => setSuccess(null), 3000)
-            } else setError(data.message)
-        } finally { setResetting(false) }
-    }
 
     // --- Render ---
 
