@@ -127,6 +127,26 @@ export async function getStudentVoteStats(): Promise<{ total: number; voted: num
     return { total: total?.count || 0, voted: voted?.count || 0 }
 }
 
+export async function getStudentStatsByLevel(): Promise<{ level: string; total: number; voted: number }[]> {
+    const db = getDB()
+    if (!db) {
+        // Mock data
+        const levels = [...new Set(mockStudents.map(s => s.level))]
+        return levels.map(level => ({
+            level,
+            total: mockStudents.filter(s => s.level === level).length,
+            voted: mockStudents.filter(s => s.level === level && s.has_voted === 1).length
+        })).sort((a, b) => a.level.localeCompare(b.level))
+    }
+    const { results } = await db.prepare(`
+        SELECT level, COUNT(*) as total, SUM(CASE WHEN has_voted = 1 THEN 1 ELSE 0 END) as voted
+        FROM students
+        GROUP BY level
+        ORDER BY level
+    `).all<{ level: string; total: number; voted: number }>()
+    return results || []
+}
+
 // Parties
 export async function getAllParties(): Promise<Party[]> {
     const db = getDB()
@@ -315,6 +335,61 @@ export async function getVoteResults(): Promise<{
         abstainCount: abstain?.count || 0,
         totalVotes: total?.count || 0,
     }
+}
+
+export async function getPartyVotesByLevel(): Promise<{ station_level: string; party_id: number; party_name: string; party_number: number; vote_count: number }[]> {
+    const db = getDB()
+    if (!db) {
+        // Mock data
+        const stats: any[] = []
+        const levels = [...new Set(mockVotes.map(v => v.station_level))]
+        levels.forEach(level => {
+            mockParties.forEach(party => {
+                const count = mockVotes.filter(v => v.station_level === level && v.party_id === party.id && !v.is_abstain).length
+                if (count > 0) {
+                    stats.push({
+                        station_level: level,
+                        party_id: party.id,
+                        party_name: party.name,
+                        party_number: party.number,
+                        vote_count: count
+                    })
+                }
+            })
+            // Abstain
+            const abstain = mockVotes.filter(v => v.station_level === level && v.is_abstain).length
+            if (abstain > 0) {
+                stats.push({
+                    station_level: level,
+                    party_id: 0, // 0 for abstain
+                    party_name: 'ไม่ประสงค์ลงคะแนน',
+                    party_number: 0,
+                    vote_count: abstain
+                })
+            }
+        })
+        return stats
+    }
+
+    // Party votes
+    const { results } = await db.prepare(`
+        SELECT v.station_level, p.id as party_id, p.name as party_name, p.number as party_number, COUNT(*) as vote_count
+        FROM votes v
+        JOIN parties p ON v.party_id = p.id
+        WHERE v.is_abstain = 0
+        GROUP BY v.station_level, p.id
+        ORDER BY v.station_level, p.number
+    `).all<{ station_level: string; party_id: number; party_name: string; party_number: number; vote_count: number }>()
+
+    // Abstain votes
+    const { results: abstainResults } = await db.prepare(`
+        SELECT station_level, 0 as party_id, 'ไม่ประสงค์ลงคะแนน' as party_name, 0 as party_number, COUNT(*) as vote_count
+        FROM votes
+        WHERE is_abstain = 1
+        GROUP BY station_level
+    `).all<{ station_level: string; party_id: number; party_name: string; party_number: number; vote_count: number }>()
+
+    return [...(results || []), ...(abstainResults || [])]
 }
 
 // Print Logs

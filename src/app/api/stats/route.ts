@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server'
-import { getTokenStats, getStudentVoteStats, getPartyCount } from '@/lib/db'
+import { getTokenStats, getStudentVoteStats, getPartyCount, getStudentStatsByLevel, getPartyVotesByLevel } from '@/lib/db'
 
 export const runtime = 'edge'
 
 export async function GET() {
     try {
-        const [tokenStats, studentStats, partyCount] = await Promise.all([
+        const [tokenStats, studentStats, partyCount, studentsByLevel, partyVotesByLevel] = await Promise.all([
             getTokenStats(),
             getStudentVoteStats(),
             getPartyCount(),
+            getStudentStatsByLevel(),
+            getPartyVotesByLevel(),
         ])
 
         return NextResponse.json({
@@ -17,6 +19,8 @@ export async function GET() {
                 parties: partyCount,
                 tokens: tokenStats,
                 students: studentStats,
+                studentsByLevel,
+                partyVotesByLevel,
             },
         })
     } catch (error) {

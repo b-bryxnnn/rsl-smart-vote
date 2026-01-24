@@ -28,6 +28,8 @@ interface Stats {
     parties: number
     tokens: { inactive: number; activated: number; used: number }
     students: { total: number; voted: number }
+    studentsByLevel?: { level: string; total: number; voted: number }[]
+    partyVotesByLevel?: { station_level: string; party_id: number; party_name: string; party_number: number; vote_count: number }[]
 }
 
 interface GeneratedToken {
@@ -250,17 +252,31 @@ export default function AdminDashboardPage() {
         }
     }
 
-    const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (!file) return
         setUploading(true)
         setError(null)
+
         try {
-            const text = await file.text()
+            const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
+            let body: any = {}
+
+            if (isExcel) {
+                // Read as Base64 for Excel
+                const buffer = await file.arrayBuffer()
+                const base64 = Buffer.from(buffer).toString('base64')
+                body = { fileType: 'excel', fileData: base64 }
+            } else {
+                // Read as Text for CSV
+                const text = await file.text()
+                body = { csvData: text }
+            }
+
             const response = await fetch('/api/students/import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ csvData: text }),
+                body: JSON.stringify(body),
             })
             const data = await response.json() as any
             if (data.success) {
@@ -268,8 +284,8 @@ export default function AdminDashboardPage() {
                 setTimeout(() => setSuccess(null), 3000)
                 await fetchData()
             } else setError(data.message)
-        } catch {
-            setError('เกิดข้อผิดพลาดในการอัปโหลด')
+        } catch (err: any) {
+            setError('เกิดข้อผิดพลาดในการอัปโหลด: ' + err.message)
         } finally {
             setUploading(false)
             if (fileInputRef.current) fileInputRef.current.value = ''
@@ -382,6 +398,7 @@ export default function AdminDashboardPage() {
                                 </div>
                             ) : (
                                 <>
+                                    {/* Summary Cards */}
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                             <p className="text-sm text-slate-500 mb-1">จำนวนพรรค</p>
@@ -405,31 +422,173 @@ export default function AdminDashboardPage() {
                                         </div>
                                     </div>
 
-                                    {/* Test Mode / Danger Zone */}
-                                    <div className="bg-red-50 border border-red-100 rounded-xl p-6 mt-8">
-                                        <h3 className="text-lg font-bold text-red-800 flex items-center gap-2 mb-4">
-                                            <ShieldAlert className="w-5 h-5" />
-                                            System Management (Testing)
+                                    {/* Stats by Level (Turnout) */}
+                                    {stats.studentsByLevel && stats.studentsByLevel.length > 0 && (
+                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                                                <h3 className="font-bold text-slate-800">สถิติการใช้สิทธิ์แยกตามชั้นปี</h3>
+                                            </div>
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                                    <tr>
+                                                        <th className="px-6 py-3">ระดับชั้น</th>
+                                                        <th className="px-6 py-3 text-right">ทั้งหมด</th>
+                                                        <th className="px-6 py-3 text-right">ใช้สิทธิ์แล้ว</th>
+                                                        <th className="px-6 py-3 text-right">ยังไม่ใช้</th>
+                                                        <th className="px-6 py-3 text-right">% การใช้สิทธิ์</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {stats.studentsByLevel.map((levelStat: any) => {
+                                                        const percentage = levelStat.total > 0 ? (levelStat.voted / levelStat.total) * 100 : 0
+                                                        return (
+                                                            <tr key={levelStat.level} className="hover:bg-slate-50/50">
+                                                                <td className="px-6 py-3 font-medium text-slate-900">{levelStat.level}</td>
+                                                                <td className="px-6 py-3 text-right text-slate-600">{levelStat.total}</td>
+                                                                <td className="px-6 py-3 text-right text-green-600 font-medium">{levelStat.voted}</td>
+                                                                <td className="px-6 py-3 text-right text-orange-500">{levelStat.total - levelStat.voted}</td>
+                                                                <td className="px-6 py-3 text-right">
+                                                                    <div className="flex items-center justify-end gap-2">
+                                                                        <span className="text-sm font-medium">{percentage.toFixed(1)}%</span>
+                                                                        <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                                                            <div className="h-full bg-green-500 rounded-full" style={{ width: `${percentage}%` }}></div>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+
+                                    {/* Stats by Party (Vote Breakdown) */}
+                                    {stats.partyVotesByLevel && stats.partyVotesByLevel.length > 0 && (
+                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                                                <h3 className="font-bold text-slate-800">ผลคะแนนแยกตามชั้นปี (Vote Breakdown)</h3>
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left whitespace-nowrap">
+                                                    <thead className="bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                                        <tr>
+                                                            <th className="px-6 py-3">ระดับชั้น</th>
+                                                            <th className="px-6 py-3">พรรค / ผู้สมัคร</th>
+                                                            <th className="px-6 py-3 text-right">คะแนน</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100">
+                                                        {stats.partyVotesByLevel.map((vote: any, idx: number) => (
+                                                            <tr key={`${vote.station_level}-${vote.party_id}-${idx}`} className="hover:bg-slate-50/50">
+                                                                <td className="px-6 py-2 font-medium text-slate-900">{vote.station_level}</td>
+                                                                <td className="px-6 py-2 text-slate-700">
+                                                                    {vote.party_number > 0 ? (
+                                                                        <span className="inline-flex items-center gap-2">
+                                                                            <span className="w-5 h-5 bg-slate-800 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                                                                {vote.party_number}
+                                                                            </span>
+                                                                            {vote.party_name}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-slate-500 italic">{vote.party_name}</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-6 py-2 text-right font-medium text-slate-900">{vote.vote_count}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* System Management (Refined) */}
+                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-8">
+                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+                                            <ShieldAlert className="w-5 h-5 text-slate-600" />
+                                            จัดการข้อมูลระบบ (System Data Management)
                                         </h3>
-                                        <div className="flex gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                             <button
                                                 onClick={handleClearHistory}
                                                 disabled={resetting}
-                                                className="px-4 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium flex items-center gap-2"
+                                                className="px-4 py-3 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 font-medium flex items-center justify-center gap-2 transition-colors"
                                             >
                                                 <History className="w-4 h-4" /> ล้างประวัติการพิมพ์
                                             </button>
+
                                             <button
-                                                onClick={handleSystemReset}
+                                                onClick={async () => {
+                                                    if (!confirm('ยืนยันลบ "รายชื่อนักเรียน" ทั้งหมด? (ข้อมูลอื่นๆ จะยังอยู่)')) return
+                                                    setResetting(true)
+                                                    try {
+                                                        const res = await fetch('/api/admin/reset', {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({ mode: 'students' })
+                                                        })
+                                                        const data = await res.json() as any
+                                                        if (data.success) {
+                                                            await fetchData()
+                                                            setSuccess('ลบรายชื่อนักเรียนเรียบร้อย')
+                                                        } else setError(data.message)
+                                                    } finally { setResetting(false) }
+                                                }}
                                                 disabled={resetting}
-                                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center gap-2 shadow-sm"
+                                                className="px-4 py-3 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <Users className="w-4 h-4" /> ลบรายชื่อนักเรียน
+                                            </button>
+
+                                            <button
+                                                onClick={async () => {
+                                                    const code = prompt('พิมพ์ "RESET" เพื่อยืนยันการล้างคะแนนและบัตรเลือกตั้ง (เก็บรายชื่อและพรรคไว้)')
+                                                    if (code !== 'RESET') return
+                                                    setResetting(true)
+                                                    try {
+                                                        const res = await fetch('/api/admin/reset', {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({ mode: 'votes' })
+                                                        })
+                                                        const data = await res.json() as any
+                                                        if (data.success) {
+                                                            await fetchData()
+                                                            setSuccess('รีเซ็ตระบบเลือกตั้งเรียบร้อย')
+                                                        } else setError(data.message)
+                                                    } finally { setResetting(false) }
+                                                }}
+                                                disabled={resetting}
+                                                className="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center justify-center gap-2 shadow-sm transition-colors"
                                             >
                                                 <RotateCcw className="w-4 h-4" /> รีเซ็ตระบบเลือกตั้ง
                                             </button>
+
+                                            <button
+                                                onClick={async () => {
+                                                    const code = prompt('⚠️ อันตราย: พิมพ์ "FACTORY RESET" เพื่อลางข้อมูลทุกอย่าง (นักเรียน, พรรค, คะแนน, LOG)')
+                                                    if (code !== 'FACTORY RESET') return
+                                                    setResetting(true)
+                                                    try {
+                                                        const res = await fetch('/api/admin/reset', {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({ mode: 'all' })
+                                                        })
+                                                        const data = await res.json() as any
+                                                        if (data.success) {
+                                                            await fetchData()
+                                                            setSuccess('ล้างข้อมูลทั้งระบบเรียบร้อย')
+                                                        } else setError(data.message)
+                                                    } finally { setResetting(false) }
+                                                }}
+                                                disabled={resetting}
+                                                className="px-4 py-3 bg-slate-800 text-white rounded-lg hover:bg-slate-900 font-medium flex items-center justify-center gap-2 shadow-sm transition-colors"
+                                            >
+                                                <ShieldAlert className="w-4 h-4" /> ล้างข้อมูลทั้งหมด
+                                            </button>
                                         </div>
-                                        <p className="text-xs text-red-500 mt-4">
-                                            * รีเซ็ตระบบเลือกตั้ง = ลบ Token, คะแนน, และประวัติการพิมพ์ทั้งหมด (เก็บรายชื่อนักเรียนและพรรคไว้)
-                                        </p>
                                     </div>
                                 </>
                             )}
@@ -502,10 +661,10 @@ export default function AdminDashboardPage() {
                             </div>
                             <h2 className="text-xl font-bold mb-2">นำเข้าข้อมูลนักเรียน</h2>
                             <p className="text-slate-500 mb-8">อัปโหลดไฟล์ CSV เพื่ออัปเดตฐานข้อมูล</p>
-                            <input type="file" ref={fileInputRef} onChange={handleCSVUpload} accept=".csv" className="hidden" id="csv" />
+                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv, .xlsx, .xls" className="hidden" id="csv" />
                             <label htmlFor="csv" className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl cursor-pointer hover:bg-slate-800 transition-colors">
                                 {uploading ? <Loader2 className="animate-spin w-5 h-5" /> : <Upload className="w-5 h-5" />}
-                                เลือกไฟล์ CSV
+                                เลือกไฟล์ CSV หรือ Excel
                             </label>
                         </motion.div>
                     )}
