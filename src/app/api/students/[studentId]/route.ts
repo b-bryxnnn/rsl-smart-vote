@@ -36,7 +36,7 @@ export async function GET(
                 last_name: student.last_name,
                 level: student.level,
                 room: student.room,
-                has_voted: student.has_voted,
+                vote_status: student.vote_status,
             },
         })
     } catch (error) {

@@ -145,16 +145,22 @@ function parseExcel(base64Data: string): StudentRow[] {
                 currentRoom = levelMatch[2]
             }
 
-            // 3. Detect Table Header
+            // 3. Detect Table Header - support multiple column formats
             if (!headerFound && (row.includes('เลขประจำตัว') || row.includes('เลขที่'))) {
                 headerFound = true
-                // Map columns
+                // Map columns - support both combined and separate name columns
                 row.forEach((cell: any, idx: number) => {
                     if (typeof cell !== 'string') return
                     const val = cell.trim()
                     if (val.includes('เลขประจำตัว')) colMap['id'] = idx
-                    else if (val.includes('ชื่อ') && val.includes('สกุล')) colMap['name'] = idx
-                    else if (val.includes('ชื่อ') && !colMap['name']) colMap['name'] = idx // Fallback
+                    // Check for separate columns: คำนำหน้า, ชื่อ, สกุล/นามสกุล
+                    else if (val === 'คำนำหน้า' || val.includes('คำนำหน้า')) colMap['prefix'] = idx
+                    else if ((val === 'ชื่อ' || val === 'ชื่อ - สกุล') && !val.includes('สกุล') && !colMap['first_name']) colMap['first_name'] = idx
+                    else if (val === 'สกุล' || val === 'นามสกุล' || val.includes('นามสกุล')) colMap['last_name'] = idx
+                    // Fallback for combined name column "ชื่อ - สกุล" or "ชื่อ-สกุล"
+                    else if ((val.includes('ชื่อ') && val.includes('สกุล')) || val === 'ชื่อ - สกุล') colMap['name'] = idx
+                    // Fallback: if just "ชื่อ" and no first_name yet
+                    else if (val.includes('ชื่อ') && !colMap['first_name'] && !colMap['name']) colMap['first_name'] = idx
                 })
                 continue
             }
@@ -164,30 +170,42 @@ function parseExcel(base64Data: string): StudentRow[] {
                 // If ID column exists and has value
                 if (colMap['id'] !== undefined && row[colMap['id']]) {
                     const studentId = String(row[colMap['id']]).trim()
-                    const fullName = row[colMap['name']] ? String(row[colMap['name']]).trim() : ''
 
                     // Skip empty rows or footer text
                     if (!studentId || !/^\d+$/.test(studentId)) continue
 
-                    // Parse Name (Prefix First Last)
                     let prefix = ''
                     let firstName = ''
                     let lastName = ''
 
-                    // Simple thai prefix removal logic
-                    const prefixes = ['ด.ช.', 'ด.ญ.', 'นาย', 'นางสาว', 'นาง']
-                    let coreName = fullName
-                    for (const p of prefixes) {
-                        if (coreName.startsWith(p)) {
-                            prefix = p
-                            coreName = coreName.replace(p, '').trim()
-                            break
-                        }
-                    }
+                    // Check if we have separate columns for prefix, first_name, last_name
+                    if (colMap['prefix'] !== undefined && colMap['first_name'] !== undefined) {
+                        // Separate columns format (A=เลขที่, B=เลขประจำตัว, C=คำนำหน้า, D=ชื่อ, E=นามสกุล)
+                        prefix = row[colMap['prefix']] ? String(row[colMap['prefix']]).trim() : ''
+                        firstName = row[colMap['first_name']] ? String(row[colMap['first_name']]).trim() : ''
+                        lastName = colMap['last_name'] !== undefined && row[colMap['last_name']]
+                            ? String(row[colMap['last_name']]).trim()
+                            : ''
+                    } else if (colMap['name'] !== undefined || colMap['first_name'] !== undefined) {
+                        // Combined name column format - parse from single column
+                        const nameColIdx = colMap['name'] !== undefined ? colMap['name'] : colMap['first_name']
+                        const fullName = row[nameColIdx] ? String(row[nameColIdx]).trim() : ''
 
-                    const nameParts = coreName.split(/\s+/) // Split by whitespace
-                    firstName = nameParts[0] || ''
-                    lastName = nameParts.slice(1).join(' ') || ''
+                        // Simple thai prefix removal logic
+                        const prefixes = ['ด.ช.', 'ด.ญ.', 'นาย', 'นางสาว', 'นาง', 'น.ส.']
+                        let coreName = fullName
+                        for (const p of prefixes) {
+                            if (coreName.startsWith(p)) {
+                                prefix = p
+                                coreName = coreName.replace(p, '').trim()
+                                break
+                            }
+                        }
+
+                        const nameParts = coreName.split(/\s+/) // Split by whitespace
+                        firstName = nameParts[0] || ''
+                        lastName = nameParts.slice(1).join(' ') || ''
+                    }
 
                     students.push({
                         student_id: studentId,

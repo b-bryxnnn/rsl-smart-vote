@@ -4,8 +4,10 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Html5Qrcode } from 'html5-qrcode'
-import { Scan, ArrowRight, X, Loader2, Vote, Settings } from 'lucide-react'
+import { Scan, ArrowRight, Loader2, Vote, MapPin } from 'lucide-react'
 import { getStationLevel } from '@/lib/utils'
+import { SystemClosedOverlay } from '@/components/SystemClosedOverlay'
+import { TokenInput } from '@/components/TokenInput'
 
 export default function HomePage() {
   const router = useRouter()
@@ -14,13 +16,48 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [stationLevel, setStationLevel] = useState<string | null>(null)
+  const [electionStatus, setElectionStatus] = useState<'open' | 'closed' | 'loading'>('loading')
+  const [scheduledOpenTime, setScheduledOpenTime] = useState<string | null>(null)
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const mountedRef = useRef(false)
+
+  // Check election status
+  const checkElectionStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/election-status')
+      const data = await res.json() as any
+      if (data.success) {
+        setElectionStatus(data.status === 'open' ? 'open' : 'closed')
+        setScheduledOpenTime(data.scheduledOpenTime || null)
+      }
+    } catch {
+      // Default to open if can't check
+      setElectionStatus('open')
+    }
+  }, [])
+
+  // Call expire check periodically
+  useEffect(() => {
+    const checkExpiredTokens = async () => {
+      try {
+        await fetch('/api/tokens/expire-check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      } catch { /* ignore */ }
+    }
+
+    // Check every 2 minutes
+    const interval = setInterval(checkExpiredTokens, 2 * 60 * 1000)
+    checkExpiredTokens() // Initial check
+
+    return () => clearInterval(interval)
+  }, [])
 
   // 1. Check Station Level & Auto-Open Scanner
   useEffect(() => {
     if (mountedRef.current) return
     mountedRef.current = true
+
+    // Check election status first
+    checkElectionStatus()
 
     // Check station setup
     const level = getStationLevel()
@@ -30,23 +67,48 @@ export default function HomePage() {
     }
     setStationLevel(level)
 
-    // Auto-open scanner
+    // Auto-open scanner (will check election status inside)
     setShowScanner(true)
-  }, [router])
+  }, [router, checkElectionStatus])
+
+  // Function to restart scanner after error
+  const restartScanner = useCallback(async () => {
+    if (scannerRef.current?.isScanning) {
+      await scannerRef.current.stop().catch(console.error)
+    }
+    scannerRef.current = null
+
+    // Small delay then restart
+    await new Promise(r => setTimeout(r, 500))
+
+    if (!document.getElementById('popup-qr-reader')) return
+
+    try {
+      const scanner = new Html5Qrcode('popup-qr-reader')
+      scannerRef.current = scanner
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
+        },
+        (decodedText) => {
+          scanner.stop().then(() => {
+            validateToken(decodedText)
+          }).catch(console.error)
+        },
+        () => { }
+      )
+    } catch (e) {
+      console.error("Scanner restart failed", e)
+    }
+  }, [])
 
   const validateToken = useCallback(async (code: string) => {
     setLoading(true)
     setError(null)
-
-    // Check if test mode is enabled - skip validation
-    const isTestMode = sessionStorage.getItem('test_mode') === 'true'
-    if (isTestMode) {
-      sessionStorage.setItem('voting_token', code.toUpperCase() || 'TEST0001')
-      setShowScanner(false)
-      router.push('/vote')
-      setLoading(false)
-      return
-    }
 
     try {
       const response = await fetch('/api/validate-token', {
@@ -62,19 +124,32 @@ export default function HomePage() {
         setShowScanner(false)
         router.push('/vote')
       } else {
+        // Check if election is closed
+        if (data.electionClosed) {
+          setElectionStatus('closed')
+          setScheduledOpenTime(data.scheduledOpenTime || null)
+        }
         setError(data.message || 'รหัสไม่ถูกต้อง หรือถูกใช้ไปแล้ว')
         setManualCode('')
+        // Auto-restart camera after 2 seconds
+        setTimeout(() => {
+          restartScanner()
+        }, 2000)
       }
     } catch {
       setError('การเชื่อมต่อล้มเหลว')
+      // Auto-restart camera after 2 seconds
+      setTimeout(() => {
+        restartScanner()
+      }, 2000)
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [router, restartScanner])
 
   // Manage Scanner Lifecycle
   useEffect(() => {
-    if (showScanner) {
+    if (showScanner && electionStatus === 'open') {
       const initScanner = async () => {
         await new Promise(r => setTimeout(r, 300)) // Wait for modal animation
 
@@ -103,8 +178,6 @@ export default function HomePage() {
           )
         } catch (e) {
           console.error("Scanner failed", e)
-          // Don't show error immediately to avoid spamming user if they just denied permission once
-          // setError('ไม่สามารถเปิดกล้องได้')
         }
       }
       initScanner()
@@ -120,11 +193,24 @@ export default function HomePage() {
         scannerRef.current.stop().catch(console.error)
       }
     }
-  }, [showScanner, validateToken])
+  }, [showScanner, electionStatus, validateToken])
 
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (manualCode.length >= 6) validateToken(manualCode)
+  const handleManualSubmit = () => {
+    if (manualCode.length >= 16) validateToken(manualCode) // RSL-XXXX-XXXXXXXX = 16 chars
+  }
+
+  // Show loading state
+  if (electionStatus === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    )
+  }
+
+  // Show closed overlay
+  if (electionStatus === 'closed') {
+    return <SystemClosedOverlay scheduledOpenTime={scheduledOpenTime} />
   }
 
   return (
@@ -152,6 +238,7 @@ export default function HomePage() {
           </p>
           {stationLevel && (
             <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full text-slate-600 text-xs font-semibold">
+              <MapPin className="w-3 h-3" />
               <span>จุดลงคะแนนสำหรับ {stationLevel}</span>
             </div>
           )}
@@ -206,6 +293,12 @@ export default function HomePage() {
                   <Scan className="w-5 h-5" />
                   สแกนหรือกรอกรหัส
                 </h3>
+                {stationLevel && (
+                  <p className="text-center text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    จุดลงคะแนน: {stationLevel}
+                  </p>
+                )}
               </div>
 
               {/* Camera Area */}
@@ -233,24 +326,22 @@ export default function HomePage() {
               <div className="p-5 bg-slate-50 border-t border-slate-100">
                 <p className="text-xs text-center text-slate-500 mb-3 font-medium uppercase tracking-wide">หรือกรอกรหัสด้วยตนเอง</p>
 
-                <form onSubmit={handleManualSubmit} className="relative">
-                  <input
-                    autoFocus
-                    type="text"
+                <div className="flex flex-col items-center gap-3">
+                  <TokenInput
                     value={manualCode}
-                    onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                    placeholder="รหัส 8 หลัก"
-                    maxLength={8}
-                    className="w-full py-3 pl-4 pr-12 bg-white border border-slate-200 rounded-xl text-center font-mono text-xl font-bold text-slate-900 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 outline-none shadow-sm uppercase tracking-widest placeholder:normal-case placeholder:tracking-normal placeholder:font-sans placeholder:text-base placeholder:text-slate-400"
+                    onChange={setManualCode}
+                    onSubmit={handleManualSubmit}
+                    disabled={loading}
                   />
                   <button
-                    type="submit"
-                    disabled={manualCode.length < 6 || loading}
-                    className="absolute right-1 top-1 bottom-1 aspect-square bg-slate-900 text-white rounded-lg flex items-center justify-center hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 transition-all"
+                    onClick={handleManualSubmit}
+                    disabled={manualCode.length < 16 || loading}
+                    className="w-full py-3 bg-slate-900 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500 transition-all"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                    ยืนยัน
                   </button>
-                </form>
+                </div>
 
                 {error && (
                   <motion.div

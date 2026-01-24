@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, CheckCircle, XCircle, ArrowLeft, Loader2, Scan } from 'lucide-react'
+import { CheckCircle, Loader2, SwitchCamera, AlertTriangle, Clock } from 'lucide-react'
 import { Html5Qrcode } from 'html5-qrcode'
+import { LoginForm } from '@/components/LoginForm'
+import { SystemClosedOverlay } from '@/components/SystemClosedOverlay'
 
 interface Student {
     student_id: string
@@ -12,21 +14,95 @@ interface Student {
     last_name: string
     level: string
     room: string
-    has_voted: number
+    vote_status: 'voted' | 'absent' | null
 }
 
 export default function VerifyPage() {
-    const [step, setStep] = useState<'search' | 'verify' | 'scan' | 'success'>('search')
+    const [isAuthenticated, setIsAuthenticated] = useState(false)
+    const [authLoading, setAuthLoading] = useState(true)
+    const [sessionToken, setSessionToken] = useState<string | null>(null)
+    const [userName, setUserName] = useState('')
+
+    const [electionStatus, setElectionStatus] = useState<'open' | 'closed' | 'loading'>('loading')
+    const [scheduledOpenTime, setScheduledOpenTime] = useState<string | null>(null)
+
+    const [step, setStep] = useState<'search' | 'verify' | 'confirm' | 'scan' | 'success'>('search')
     const [studentId, setStudentId] = useState('')
+    const [tokenCode, setTokenCode] = useState('')
     const [student, setStudent] = useState<Student | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
     const scannerRef = useRef<Html5Qrcode | null>(null)
 
-    // Verify functions same as before but minimal UI...
+    // Check session on mount
+    useEffect(() => {
+        const checkAuth = async () => {
+            const token = sessionStorage.getItem('session_token')
+            if (token) {
+                try {
+                    const res = await fetch('/api/auth/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionToken: token })
+                    })
+                    const data = await res.json() as any
+                    if (data.success) {
+                        setSessionToken(token)
+                        setIsAuthenticated(true)
+                        setUserName(data.user.displayName || data.user.username)
+                    } else {
+                        sessionStorage.removeItem('session_token')
+                    }
+                } catch {
+                    sessionStorage.removeItem('session_token')
+                }
+            }
+            setAuthLoading(false)
+        }
+        checkAuth()
+    }, [])
+
+    // Check election status
+    useEffect(() => {
+        const checkStatus = async () => {
+            try {
+                const res = await fetch('/api/election-status')
+                const data = await res.json() as any
+                if (data.success) {
+                    setElectionStatus(data.status === 'open' ? 'open' : 'closed')
+                    setScheduledOpenTime(data.scheduledOpenTime || null)
+                }
+            } catch {
+                setElectionStatus('open')
+            }
+        }
+        checkStatus()
+    }, [])
+
+    const handleLogin = async (username: string, password: string) => {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        })
+        const data = await res.json() as any
+
+        if (data.success) {
+            sessionStorage.setItem('session_token', data.sessionToken)
+            sessionStorage.setItem('user_info', JSON.stringify(data.user))
+            setSessionToken(data.sessionToken)
+            setIsAuthenticated(true)
+            setUserName(data.user.displayName || data.user.username)
+            return { success: true }
+        }
+        return { success: false, message: data.message }
+    }
+
     const searchStudent = async () => {
         if (!studentId) return
         setLoading(true)
+        setError(null)
         try {
             const res = await fetch(`/api/students/${studentId}`)
             const data = await res.json() as any
@@ -37,45 +113,138 @@ export default function VerifyPage() {
         } finally { setLoading(false) }
     }
 
-    const activateToken = async (code: string) => {
+    const activateToken = useCallback(async (code: string) => {
+        if (!sessionToken) return
         setLoading(true)
+        setError(null)
+        setTokenCode(code)
         try {
             const res = await fetch('/api/activate-token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tokenCode: code, studentId: student?.student_id })
+                body: JSON.stringify({
+                    tokenCode: code,
+                    studentId: student?.student_id,
+                    sessionToken
+                })
             })
             const data = await res.json() as any
             if (data.success) {
                 if (scannerRef.current?.isScanning) scannerRef.current.stop()
                 setStep('success')
-                setTimeout(reset, 2000)
-            } else setError(data.message)
+                setTimeout(reset, 3000)
+            } else {
+                setError(data.message)
+                setTimeout(() => { restartScanner() }, 2000)
+            }
+        } catch {
+            setError('การเชื่อมต่อล้มเหลว')
+            setTimeout(() => { restartScanner() }, 2000)
         } finally { setLoading(false) }
-    }
+    }, [sessionToken, student])
+
+    const restartScanner = useCallback(async () => {
+        if (scannerRef.current?.isScanning) {
+            await scannerRef.current.stop().catch(() => { })
+        }
+        scannerRef.current = null
+
+        await new Promise(r => setTimeout(r, 300))
+
+        if (!document.getElementById('verify-scanner')) return
+
+        try {
+            const scanner = new Html5Qrcode('verify-scanner')
+            scannerRef.current = scanner
+            await scanner.start(
+                { facingMode },
+                { fps: 10, qrbox: { width: 220, height: 220 } },
+                activateToken,
+                () => { }
+            )
+        } catch (e) {
+            console.error("Scanner restart failed", e)
+            setError('ไม่สามารถเปิดกล้องได้')
+        }
+    }, [facingMode, activateToken])
 
     const startScanner = async () => {
         setStep('scan')
+        setError(null)
         setTimeout(async () => {
-            // Small delay for UI render
             const scanner = new Html5Qrcode('verify-scanner')
             scannerRef.current = scanner
-            await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 220, height: 220 } }, activateToken, () => { })
+            try {
+                await scanner.start({ facingMode }, { fps: 10, qrbox: { width: 220, height: 220 } }, activateToken, () => { })
+            } catch (e) {
+                console.error("Scanner failed", e)
+                setError('ไม่สามารถเปิดกล้องได้')
+            }
         }, 100)
+    }
+
+    const switchCamera = async () => {
+        const newFacingMode = facingMode === 'environment' ? 'user' : 'environment'
+        setFacingMode(newFacingMode)
+
+        if (scannerRef.current?.isScanning) {
+            await scannerRef.current.stop().catch(() => { })
+        }
+        scannerRef.current = null
+
+        setTimeout(async () => {
+            if (!document.getElementById('verify-scanner')) return
+            try {
+                const scanner = new Html5Qrcode('verify-scanner')
+                scannerRef.current = scanner
+                await scanner.start(
+                    { facingMode: newFacingMode },
+                    { fps: 10, qrbox: { width: 220, height: 220 } },
+                    activateToken,
+                    () => { }
+                )
+            } catch (e) {
+                console.error("Camera switch failed", e)
+                setError('ไม่สามารถสลับกล้องได้')
+            }
+        }, 300)
     }
 
     const reset = () => {
         setStep('search')
         setStudentId('')
         setStudent(null)
+        setTokenCode('')
         setError(null)
         if (scannerRef.current?.isScanning) scannerRef.current.stop().catch(() => { })
     }
 
+    // Loading state
+    if (authLoading || electionStatus === 'loading') {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            </div>
+        )
+    }
+
+    // Show login if not authenticated
+    if (!isAuthenticated) {
+        return <LoginForm title="กรรมการเลือกตั้ง" onLogin={handleLogin} />
+    }
+
+    // Show closed overlay
+    if (electionStatus === 'closed') {
+        return <SystemClosedOverlay scheduledOpenTime={scheduledOpenTime} />
+    }
+
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
-            <header className="bg-white border-b border-gray-200 p-4 text-center sticky top-0 z-10">
-                <h1 className="font-bold text-gray-900">ตรวจสอบสิทธิ์</h1>
+            <header className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
+                <div className="max-w-md mx-auto flex justify-between items-center">
+                    <h1 className="font-bold text-gray-900">ตรวจสอบสิทธิ์</h1>
+                    <span className="text-sm text-gray-500">{userName}</span>
+                </div>
             </header>
 
             <main className="flex-1 p-6 flex flex-col items-center max-w-md mx-auto w-full">
@@ -108,27 +277,66 @@ export default function VerifyPage() {
                             <h2 className="text-2xl font-bold text-gray-900 mb-1">{student.prefix}{student.first_name} {student.last_name}</h2>
                             <p className="text-gray-500 mb-6">{student.student_id} | {student.level} ห้อง {student.room}</p>
 
-                            {student.has_voted ? (
+                            {student.vote_status === 'voted' ? (
                                 <div className="bg-red-50 text-red-600 p-4 rounded-xl font-bold mb-4">ใช้สิทธิ์ไปแล้ว</div>
+                            ) : student.vote_status === 'absent' ? (
+                                <div className="bg-orange-50 text-orange-600 p-4 rounded-xl font-bold mb-4">ถูกตัดสิทธิ์แล้ว (ไม่มาใช้สิทธิ์)</div>
                             ) : (
                                 <div className="grid grid-cols-2 gap-3">
                                     <button onClick={reset} className="py-3 text-gray-500 font-medium hover:bg-gray-50 rounded-xl">ยกเลิก</button>
-                                    <button onClick={startScanner} className="py-3 bg-gray-900 text-white font-bold rounded-xl shadow-lg">ยืนยัน</button>
+                                    <button onClick={startScanner} className="py-3 bg-gray-900 text-white font-bold rounded-xl shadow-lg">สแกนบัตร</button>
                                 </div>
                             )}
-                            {student.has_voted ? <button onClick={reset} className="w-full py-3 text-gray-500">กลับ</button> : null}
+                            {student.vote_status !== null ? <button onClick={reset} className="w-full py-3 text-gray-500">กลับ</button> : null}
                         </motion.div>
                     )}
 
                     {step === 'scan' && (
                         <motion.div key="scan" className="w-full">
+                            {/* Student info reminder */}
+                            {student && (
+                                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4 text-center">
+                                    <p className="text-sm text-blue-800">
+                                        กำลังเปิดสิทธิ์ให้: <span className="font-bold">{student.prefix}{student.first_name}</span>
+                                    </p>
+                                </div>
+                            )}
+
                             <div className="bg-white p-2 rounded-3xl shadow-xl border border-gray-100 overflow-hidden relative">
                                 <div id="verify-scanner" className="w-full aspect-square bg-black rounded-2xl overflow-hidden" />
                                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                                     <div className="w-56 h-56 border-2 border-white/50 rounded-xl" />
                                 </div>
+                                <button
+                                    onClick={switchCamera}
+                                    className="absolute top-4 right-4 p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-sm transition-all"
+                                    title={facingMode === 'environment' ? 'สลับเป็นกล้องหน้า' : 'สลับเป็นกล้องหลัง'}
+                                >
+                                    <SwitchCamera className="w-5 h-5" />
+                                </button>
                             </div>
-                            <button onClick={reset} className="w-full mt-6 py-4 text-gray-500 font-medium">ยกเลิก</button>
+                            <p className="text-center text-gray-400 text-xs mt-2">
+                                {facingMode === 'environment' ? '📷 กล้องหลัง' : '🤳 กล้องหน้า'}
+                            </p>
+
+                            {/* Warning about 30-min timeout */}
+                            <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-2">
+                                <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                <p className="text-sm text-amber-800">
+                                    <span className="font-bold">สำคัญ:</span> บัตรจะมีอายุ 30 นาที หากนักเรียนไม่ลงคะแนนภายในเวลา จะถือว่าไม่มาใช้สิทธิ์
+                                </p>
+                            </div>
+
+                            {error && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 5 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm text-center"
+                                >
+                                    <span className="font-bold">Error:</span> {error}
+                                </motion.div>
+                            )}
+                            <button onClick={reset} className="w-full mt-4 py-4 text-gray-500 font-medium">ยกเลิก</button>
                         </motion.div>
                     )}
 
@@ -139,6 +347,10 @@ export default function VerifyPage() {
                             </div>
                             <h2 className="text-2xl font-bold text-gray-900">เรียบร้อย</h2>
                             <p className="text-gray-500">เปิดสิทธิ์สำเร็จแล้ว</p>
+                            <p className="text-amber-600 text-sm mt-2 flex items-center justify-center gap-1">
+                                <Clock className="w-4 h-4" />
+                                บัตรมีอายุ 30 นาที
+                            </p>
                         </motion.div>
                     )}
                 </AnimatePresence>

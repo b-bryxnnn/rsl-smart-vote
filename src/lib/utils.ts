@@ -1,20 +1,18 @@
 import QRCode from 'qrcode'
 
-// Generate random alphanumeric token code
-export function generateTokenCode(length: number = 8): string {
+// Generate random alphanumeric token code in format RSL-XXXX-XXXXXXXX
+export function generateTokenCode(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // Removed confusing chars: I, O, 0, 1
-    let result = ''
-    for (let i = 0; i < length; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return result
+    const part1 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+    const part2 = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+    return `RSL-${part1}-${part2}`
 }
 
 // Generate batch of unique token codes
-export function generateTokenCodes(count: number, length: number = 8): string[] {
+export function generateTokenCodes(count: number): string[] {
     const codes = new Set<string>()
     while (codes.size < count) {
-        codes.add(generateTokenCode(length))
+        codes.add(generateTokenCode())
     }
     return Array.from(codes)
 }
@@ -89,11 +87,11 @@ export function formatThaiDateShort(date: Date | string): string {
     })
 }
 
-// Validate token code format
+// Validate token code format (RSL-XXXX-XXXXXXXX)
 export function isValidTokenCode(code: string): boolean {
-    // 8 alphanumeric characters (excluding confusing chars)
-    const validChars = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
-    return validChars.test(code.toUpperCase())
+    // Format: RSL-4chars-8chars
+    const validFormat = /^RSL-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
+    return validFormat.test(code.toUpperCase())
 }
 
 // Sanitize student ID input

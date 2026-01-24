@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
     Plus, Trash2, Edit2, Printer, History, Users, QrCode,
     CheckCircle, XCircle, Loader2, Save, AlertCircle, RefreshCw,
-    Upload, FileSpreadsheet, LayoutGrid, RotateCcw, ShieldAlert
+    Upload, FileSpreadsheet, LayoutGrid, RotateCcw, ShieldAlert, LogOut, Settings, ClipboardList
 } from 'lucide-react'
 import QRCode from 'qrcode'
+import { LoginForm } from '@/components/LoginForm'
 
 interface Party {
     id: number
@@ -38,7 +39,13 @@ interface GeneratedToken {
 }
 
 export default function AdminDashboardPage() {
-    const [activeTab, setActiveTab] = useState<'parties' | 'tokens' | 'students' | 'history' | 'stats'>('parties')
+    // Auth state
+    const [isAuthenticated, setIsAuthenticated] = useState(false)
+    const [authLoading, setAuthLoading] = useState(true)
+    const [sessionToken, setSessionToken] = useState<string | null>(null)
+    const [adminUser, setAdminUser] = useState<{ username: string; displayName: string | null } | null>(null)
+
+    const [activeTab, setActiveTab] = useState<'parties' | 'tokens' | 'students' | 'history' | 'stats' | 'settings' | 'logs'>('parties')
     const [parties, setParties] = useState<Party[]>([])
     const [printLogs, setPrintLogs] = useState<PrintLog[]>([])
     const [stats, setStats] = useState<Stats | null>(null)
@@ -69,9 +76,75 @@ export default function AdminDashboardPage() {
 
     const [uploading, setUploading] = useState(false)
 
+    // Check session on mount
     useEffect(() => {
-        fetchData()
+        const checkAuth = async () => {
+            const token = sessionStorage.getItem('session_token')
+            if (token) {
+                try {
+                    const res = await fetch('/api/auth/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionToken: token })
+                    })
+                    const data = await res.json() as any
+                    if (data.success && data.user.role === 'admin') {
+                        setSessionToken(token)
+                        setIsAuthenticated(true)
+                        setAdminUser({ username: data.user.username, displayName: data.user.displayName })
+                    } else {
+                        sessionStorage.removeItem('session_token')
+                        sessionStorage.removeItem('user_info')
+                    }
+                } catch {
+                    sessionStorage.removeItem('session_token')
+                }
+            }
+            setAuthLoading(false)
+        }
+        checkAuth()
     }, [])
+
+    const handleLogin = async (username: string, password: string) => {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        })
+        const data = await res.json() as any
+
+        if (data.success) {
+            if (data.user.role !== 'admin') {
+                return { success: false, message: 'ต้องใช้บัญชี Admin เท่านั้น' }
+            }
+            sessionStorage.setItem('session_token', data.sessionToken)
+            sessionStorage.setItem('user_info', JSON.stringify(data.user))
+            setSessionToken(data.sessionToken)
+            setIsAuthenticated(true)
+            setAdminUser({ username: data.user.username, displayName: data.user.displayName })
+            return { success: true }
+        }
+        return { success: false, message: data.message }
+    }
+
+    const handleLogout = async () => {
+        if (sessionToken) {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionToken })
+            }).catch(() => { })
+        }
+        sessionStorage.removeItem('session_token')
+        sessionStorage.removeItem('user_info')
+        setIsAuthenticated(false)
+        setSessionToken(null)
+        setAdminUser(null)
+    }
+
+    useEffect(() => {
+        if (isAuthenticated) fetchData()
+    }, [isAuthenticated])
 
     const fetchData = async () => {
         setLoading(true)
@@ -315,9 +388,17 @@ export default function AdminDashboardPage() {
         } finally { setResetting(false) }
     }
 
-
-
     // --- Render ---
+
+    // Auth loading
+    if (authLoading) {
+        return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin" /></div>
+    }
+
+    // Not authenticated - show login
+    if (!isAuthenticated) {
+        return <LoginForm title="Admin Dashboard" onLogin={handleLogin} />
+    }
 
     if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>
 

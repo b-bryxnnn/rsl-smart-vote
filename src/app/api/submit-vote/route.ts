@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getTokenByCode, useToken, createVote } from '@/lib/db'
+import { getTokenByCode, completeVoteAndClearLink, createVote, markStudentAsVoted, logActivity } from '@/lib/db'
 
 export const runtime = 'edge'
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json() as any
+        const body = await request.json() as { token?: string; partyId?: number; isAbstain?: boolean }
         const { token, partyId, isAbstain } = body
+
+        const ip = request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown'
+        const userAgent = request.headers.get('user-agent') || 'unknown'
 
         if (!token) {
             return NextResponse.json(
@@ -17,7 +20,7 @@ export async function POST(request: NextRequest) {
 
         const cleanCode = token.toUpperCase().trim()
 
-        // Verify token is activated
+        // Verify token is in 'voting' status
         const tokenRecord = await getTokenByCode(cleanCode)
 
         if (!tokenRecord) {
@@ -27,31 +30,48 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        if (tokenRecord.status !== 'activated') {
+        if (tokenRecord.status !== 'voting') {
+            const messages: Record<string, string> = {
+                'inactive': 'บัตรนี้ยังไม่ได้เปิดสิทธิ์',
+                'activated': 'บัตรนี้ยังไม่ได้สแกนที่จุดลงคะแนน',
+                'used': 'บัตรนี้ถูกใช้ไปแล้ว',
+                'expired': 'บัตรนี้หมดอายุแล้ว'
+            }
             return NextResponse.json(
-                { success: false, message: tokenRecord.status === 'used' ? 'บัตรนี้ถูกใช้ไปแล้ว' : 'บัตรนี้ยังไม่ได้เปิดสิทธิ์' },
+                { success: false, message: messages[tokenRecord.status] || 'สถานะบัตรไม่ถูกต้อง' },
                 { status: 400 }
             )
         }
 
-        // Mark token as used
-        const used = await useToken(cleanCode)
+        // Complete vote and clear student link (for anonymity)
+        const result = await completeVoteAndClearLink(cleanCode)
 
-        if (!used) {
+        if (!result.success) {
             return NextResponse.json(
                 { success: false, message: 'ไม่สามารถบันทึกคะแนนได้' },
                 { status: 500 }
             )
         }
 
-        // Create vote record
+        // Mark student as voted (now that we have the student_id before it was cleared)
+        if (result.studentId) {
+            await markStudentAsVoted(result.studentId)
+        }
+
+        // Create vote record (anonymous - no student link)
         const stationLevel = tokenRecord.station_level || 'unknown'
         await createVote(
-            isAbstain ? null : partyId,
+            isAbstain ? null : partyId || null,
             stationLevel,
             tokenRecord.id,
-            isAbstain
+            isAbstain || false
         )
+
+        await logActivity('vote_submitted', {
+            stationLevel,
+            isAbstain: isAbstain || false,
+            partyId: isAbstain ? null : partyId
+        }, undefined, undefined, ip, userAgent)
 
         return NextResponse.json({
             success: true,

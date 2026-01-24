@@ -2,8 +2,39 @@
 // This file provides mock data when D1 is not available
 
 import { getRequestContext } from '@cloudflare/next-on-pages'
+import { hashPassword, verifyPassword, generateSessionToken } from './hash'
 
 // Types
+export interface User {
+    id: number
+    username: string
+    password_hash: string
+    role: 'admin' | 'committee'
+    display_name: string | null
+    is_active: number
+    created_at: string
+    last_login: string | null
+}
+
+export interface Session {
+    id: number
+    user_id: number
+    session_token: string
+    created_at: string
+    expires_at: string | null
+}
+
+export interface ActivityLog {
+    id: number
+    action: string
+    details: string | null
+    user_id: number | null
+    user_username: string | null
+    ip_address: string | null
+    user_agent: string | null
+    created_at: string
+}
+
 export interface Student {
     id: number
     student_id: string
@@ -12,7 +43,7 @@ export interface Student {
     last_name: string
     level: string
     room: string | null
-    has_voted: number
+    vote_status: 'voted' | 'absent' | null
     voted_at: string | null
 }
 
@@ -26,10 +57,13 @@ export interface Party {
 export interface Token {
     id: number
     code: string
-    status: 'inactive' | 'activated' | 'used'
+    status: 'inactive' | 'activated' | 'voting' | 'used' | 'expired'
     station_level: string | null
     print_batch_id: string | null
+    student_id: string | null
+    activated_by: number | null
     activated_at: string | null
+    voting_started_at: string | null
     used_at: string | null
     created_at: string
 }
@@ -66,7 +100,7 @@ const globalStore = (global as any)
 if (!globalStore.mockPrintLogs) globalStore.mockPrintLogs = []
 const mockPrintLogs: PrintLog[] = globalStore.mockPrintLogs
 const mockStudents: Student[] = [
-    { id: 1, student_id: '12345', prefix: 'นาย', first_name: 'ทดสอบ', last_name: 'ระบบ', level: 'ม.4', room: '1', has_voted: 0, voted_at: null },
+    { id: 1, student_id: '12345', prefix: 'นาย', first_name: 'ทดสอบ', last_name: 'ระบบ', level: 'ม.4', room: '1', vote_status: null, voted_at: null },
 ]
 
 let tokenIdCounter = 1
@@ -107,23 +141,23 @@ export async function markStudentAsVoted(studentId: string): Promise<void> {
     if (!db) {
         const student = mockStudents.find(s => s.student_id === studentId)
         if (student) {
-            student.has_voted = 1
+            student.vote_status = 'voted'
             student.voted_at = new Date().toISOString()
         }
         return
     }
-    await db.prepare('UPDATE students SET has_voted = 1, voted_at = datetime("now") WHERE student_id = ?').bind(studentId).run()
+    await db.prepare('UPDATE students SET vote_status = "voted", voted_at = datetime("now") WHERE student_id = ?').bind(studentId).run()
 }
 
 export async function getStudentVoteStats(): Promise<{ total: number; voted: number }> {
     const db = getDB()
     if (!db) {
         const total = mockStudents.length
-        const voted = mockStudents.filter(s => s.has_voted === 1).length
+        const voted = mockStudents.filter(s => s.vote_status === 'voted').length
         return { total, voted }
     }
     const total = await db.prepare('SELECT COUNT(*) as count FROM students').first<{ count: number }>()
-    const voted = await db.prepare('SELECT COUNT(*) as count FROM students WHERE has_voted = 1').first<{ count: number }>()
+    const voted = await db.prepare('SELECT COUNT(*) as count FROM students WHERE vote_status = "voted"').first<{ count: number }>()
     return { total: total?.count || 0, voted: voted?.count || 0 }
 }
 
@@ -135,11 +169,11 @@ export async function getStudentStatsByLevel(): Promise<{ level: string; total: 
         return levels.map(level => ({
             level,
             total: mockStudents.filter(s => s.level === level).length,
-            voted: mockStudents.filter(s => s.level === level && s.has_voted === 1).length
+            voted: mockStudents.filter(s => s.level === level && s.vote_status === 'voted').length
         })).sort((a, b) => a.level.localeCompare(b.level))
     }
     const { results } = await db.prepare(`
-        SELECT level, COUNT(*) as total, SUM(CASE WHEN has_voted = 1 THEN 1 ELSE 0 END) as voted
+        SELECT level, COUNT(*) as total, SUM(CASE WHEN vote_status = 'voted' THEN 1 ELSE 0 END) as voted
         FROM students
         GROUP BY level
         ORDER BY level
@@ -217,7 +251,10 @@ export async function createTokens(tokens: { code: string; print_batch_id: strin
                 status: 'inactive',
                 station_level: null,
                 print_batch_id: t.print_batch_id,
+                student_id: null,
+                activated_by: null,
                 activated_at: null,
+                voting_started_at: null,
                 used_at: null,
                 created_at: new Date().toISOString()
             })
@@ -474,4 +511,436 @@ export async function getPartyCount(): Promise<number> {
     }
     const result = await db.prepare('SELECT COUNT(*) as count FROM parties').first<{ count: number }>()
     return result?.count || 0
+}
+
+// =====================================================
+// USER AUTHENTICATION
+// =====================================================
+
+// Mock users for local dev - includes default admin
+// Use DEV_MODE: prefix to indicate plaintext password for dev testing
+const mockUsers: User[] = [
+    {
+        id: 1,
+        username: 'admin',
+        password_hash: 'DEV_MODE:scrsl12345678', // Special dev mode - plaintext check
+        role: 'admin',
+        display_name: 'ผู้ดูแลระบบ',
+        is_active: 1,
+        created_at: new Date().toISOString(),
+        last_login: null
+    }
+]
+const mockSessions: Session[] = []
+const mockActivityLogs: ActivityLog[] = []
+const mockSystemSettings: Record<string, string> = {
+    election_status: 'open', // Default to open for dev testing
+    election_open_time: '',
+    election_close_time: ''
+}
+
+export async function createUser(username: string, passwordHash: string, role: 'admin' | 'committee', displayName?: string): Promise<User | null> {
+    const db = getDB()
+    if (!db) {
+        const newUser: User = {
+            id: mockUsers.length + 1,
+            username,
+            password_hash: passwordHash,
+            role,
+            display_name: displayName || null,
+            is_active: 1,
+            created_at: new Date().toISOString(),
+            last_login: null
+        }
+        mockUsers.push(newUser)
+        return newUser
+    }
+    const result = await db.prepare(
+        'INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?) RETURNING *'
+    ).bind(username, passwordHash, role, displayName || null).first<User>()
+    return result || null
+}
+
+export async function getUserByUsername(username: string): Promise<User | null> {
+    const db = getDB()
+    if (!db) {
+        return mockUsers.find(u => u.username === username) || null
+    }
+    const result = await db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').bind(username).first<User>()
+    return result || null
+}
+
+export async function getUserById(id: number): Promise<User | null> {
+    const db = getDB()
+    if (!db) {
+        return mockUsers.find(u => u.id === id) || null
+    }
+    const result = await db.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<User>()
+    return result || null
+}
+
+export async function getAllUsers(): Promise<User[]> {
+    const db = getDB()
+    if (!db) {
+        return [...mockUsers]
+    }
+    const { results } = await db.prepare('SELECT * FROM users ORDER BY created_at DESC').all<User>()
+    return results || []
+}
+
+export async function updateUser(id: number, updates: Partial<Pick<User, 'display_name' | 'role' | 'is_active'>>): Promise<boolean> {
+    const db = getDB()
+    if (!db) {
+        const user = mockUsers.find(u => u.id === id)
+        if (user) {
+            if (updates.display_name !== undefined) user.display_name = updates.display_name
+            if (updates.role !== undefined) user.role = updates.role
+            if (updates.is_active !== undefined) user.is_active = updates.is_active
+            return true
+        }
+        return false
+    }
+    const sets: string[] = []
+    const values: any[] = []
+    if (updates.display_name !== undefined) { sets.push('display_name = ?'); values.push(updates.display_name) }
+    if (updates.role !== undefined) { sets.push('role = ?'); values.push(updates.role) }
+    if (updates.is_active !== undefined) { sets.push('is_active = ?'); values.push(updates.is_active) }
+    if (sets.length === 0) return false
+    values.push(id)
+    const result = await db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...values).run()
+    return result.meta.changes > 0
+}
+
+export async function updateUserPassword(id: number, newPasswordHash: string): Promise<boolean> {
+    const db = getDB()
+    if (!db) {
+        const user = mockUsers.find(u => u.id === id)
+        if (user) {
+            user.password_hash = newPasswordHash
+            return true
+        }
+        return false
+    }
+    const result = await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(newPasswordHash, id).run()
+    return result.meta.changes > 0
+}
+
+export async function deleteUser(id: number): Promise<boolean> {
+    const db = getDB()
+    if (!db) {
+        const idx = mockUsers.findIndex(u => u.id === id)
+        if (idx !== -1) {
+            mockUsers.splice(idx, 1)
+            return true
+        }
+        return false
+    }
+    const result = await db.prepare('DELETE FROM users WHERE id = ?').bind(id).run()
+    return result.meta.changes > 0
+}
+
+// =====================================================
+// SESSION MANAGEMENT
+// =====================================================
+
+export async function createSession(userId: number, sessionToken: string): Promise<Session | null> {
+    const db = getDB()
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
+    if (!db) {
+        const session: Session = {
+            id: mockSessions.length + 1,
+            user_id: userId,
+            session_token: sessionToken,
+            created_at: new Date().toISOString(),
+            expires_at: expiresAt
+        }
+        mockSessions.push(session)
+        // Update last login
+        const user = mockUsers.find(u => u.id === userId)
+        if (user) user.last_login = new Date().toISOString()
+        return session
+    }
+    await db.prepare('UPDATE users SET last_login = datetime("now") WHERE id = ?').bind(userId).run()
+    const result = await db.prepare(
+        'INSERT INTO sessions (user_id, session_token, expires_at) VALUES (?, ?, ?) RETURNING *'
+    ).bind(userId, sessionToken, expiresAt).first<Session>()
+    return result || null
+}
+
+export async function getSessionByToken(sessionToken: string): Promise<{ session: Session; user: User } | null> {
+    const db = getDB()
+    if (!db) {
+        const session = mockSessions.find(s => s.session_token === sessionToken)
+        if (!session) return null
+        const user = mockUsers.find(u => u.id === session.user_id)
+        if (!user) return null
+        return { session, user }
+    }
+    const session = await db.prepare('SELECT * FROM sessions WHERE session_token = ?').bind(sessionToken).first<Session>()
+    if (!session) return null
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').bind(session.user_id).first<User>()
+    if (!user) return null
+    return { session, user }
+}
+
+export async function deleteSession(sessionToken: string): Promise<boolean> {
+    const db = getDB()
+    if (!db) {
+        const idx = mockSessions.findIndex(s => s.session_token === sessionToken)
+        if (idx !== -1) {
+            mockSessions.splice(idx, 1)
+            return true
+        }
+        return false
+    }
+    const result = await db.prepare('DELETE FROM sessions WHERE session_token = ?').bind(sessionToken).run()
+    return result.meta.changes > 0
+}
+
+export async function deleteUserSessions(userId: number): Promise<void> {
+    const db = getDB()
+    if (!db) {
+        const toRemove = mockSessions.filter(s => s.user_id === userId)
+        toRemove.forEach(s => {
+            const idx = mockSessions.indexOf(s)
+            if (idx !== -1) mockSessions.splice(idx, 1)
+        })
+        return
+    }
+    await db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run()
+}
+
+// =====================================================
+// ACTIVITY LOGGING
+// =====================================================
+
+export async function logActivity(action: string, details?: object, userId?: number, username?: string, ip?: string, userAgent?: string): Promise<void> {
+    const db = getDB()
+    const detailsJson = details ? JSON.stringify(details) : null
+    if (!db) {
+        mockActivityLogs.push({
+            id: mockActivityLogs.length + 1,
+            action,
+            details: detailsJson,
+            user_id: userId || null,
+            user_username: username || null,
+            ip_address: ip || null,
+            user_agent: userAgent || null,
+            created_at: new Date().toISOString()
+        })
+        return
+    }
+    await db.prepare(
+        'INSERT INTO activity_logs (action, details, user_id, user_username, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(action, detailsJson, userId || null, username || null, ip || null, userAgent || null).run()
+}
+
+export async function getActivityLogs(limit: number = 100): Promise<ActivityLog[]> {
+    const db = getDB()
+    if (!db) {
+        return [...mockActivityLogs].reverse().slice(0, limit)
+    }
+    const { results } = await db.prepare('SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT ?').bind(limit).all<ActivityLog>()
+    return results || []
+}
+
+// =====================================================
+// SYSTEM SETTINGS
+// =====================================================
+
+export async function getSystemSetting(key: string): Promise<string | null> {
+    const db = getDB()
+    if (!db) {
+        return mockSystemSettings[key] || null
+    }
+    const result = await db.prepare('SELECT value FROM system_settings WHERE key = ?').bind(key).first<{ value: string }>()
+    return result?.value || null
+}
+
+export async function setSystemSetting(key: string, value: string): Promise<void> {
+    const db = getDB()
+    if (!db) {
+        mockSystemSettings[key] = value
+        return
+    }
+    await db.prepare(
+        'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime("now"))'
+    ).bind(key, value).run()
+}
+
+export async function getElectionStatus(): Promise<{ status: string; openTime: string | null; closeTime: string | null }> {
+    const status = await getSystemSetting('election_status') || 'closed'
+    const openTime = await getSystemSetting('election_open_time')
+    const closeTime = await getSystemSetting('election_close_time')
+    return { status, openTime, closeTime }
+}
+
+// =====================================================
+// ENHANCED TOKEN FUNCTIONS
+// =====================================================
+
+export async function activateTokenForStudent(code: string, studentId: string, activatedBy: number): Promise<boolean> {
+    const db = getDB()
+    if (!db) {
+        const token = mockTokens.find(t => t.code === code && t.status === 'inactive')
+        if (token) {
+            token.status = 'activated'
+            token.student_id = studentId
+            token.activated_by = activatedBy
+            token.activated_at = new Date().toISOString()
+            return true
+        }
+        return false
+    }
+    const result = await db.prepare(
+        'UPDATE tokens SET status = "activated", student_id = ?, activated_by = ?, activated_at = datetime("now") WHERE code = ? AND status = "inactive"'
+    ).bind(studentId, activatedBy, code).run()
+    return result.meta.changes > 0
+}
+
+export async function setTokenVoting(code: string): Promise<boolean> {
+    const db = getDB()
+    if (!db) {
+        const token = mockTokens.find(t => t.code === code && t.status === 'activated')
+        if (token) {
+            token.status = 'voting'
+            token.voting_started_at = new Date().toISOString()
+            return true
+        }
+        return false
+    }
+    const result = await db.prepare(
+        'UPDATE tokens SET status = "voting", voting_started_at = datetime("now") WHERE code = ? AND status = "activated"'
+    ).bind(code).run()
+    return result.meta.changes > 0
+}
+
+export async function completeVoteAndClearLink(code: string): Promise<{ success: boolean; studentId: string | null }> {
+    const db = getDB()
+    if (!db) {
+        const token = mockTokens.find(t => t.code === code && t.status === 'voting')
+        if (token) {
+            const studentId = token.student_id
+            token.status = 'used'
+            token.student_id = null // Clear for anonymity
+            token.used_at = new Date().toISOString()
+            return { success: true, studentId }
+        }
+        return { success: false, studentId: null }
+    }
+    // Get student_id before clearing
+    const token = await db.prepare('SELECT student_id FROM tokens WHERE code = ? AND status = "voting"').bind(code).first<{ student_id: string }>()
+    if (!token) return { success: false, studentId: null }
+
+    const result = await db.prepare(
+        'UPDATE tokens SET status = "used", student_id = NULL, used_at = datetime("now") WHERE code = ? AND status = "voting"'
+    ).bind(code).run()
+    return { success: result.meta.changes > 0, studentId: token.student_id }
+}
+
+export async function markStudentAsAbsent(studentId: string): Promise<void> {
+    const db = getDB()
+    if (!db) {
+        const student = mockStudents.find(s => s.student_id === studentId)
+        if (student) {
+            student.vote_status = 'absent'
+            student.voted_at = new Date().toISOString()
+        }
+        return
+    }
+    await db.prepare('UPDATE students SET vote_status = "absent", voted_at = datetime("now") WHERE student_id = ?').bind(studentId).run()
+}
+
+export async function expireOldTokens(timeoutMinutes: number = 30): Promise<{ expiredCount: number; absentStudents: string[] }> {
+    const db = getDB()
+    const cutoffTime = new Date(Date.now() - timeoutMinutes * 60 * 1000).toISOString()
+
+    if (!db) {
+        const expiredTokens = mockTokens.filter(t =>
+            t.status === 'activated' &&
+            t.activated_at &&
+            new Date(t.activated_at) < new Date(cutoffTime)
+        )
+        const absentStudents: string[] = []
+        for (const token of expiredTokens) {
+            token.status = 'expired'
+            if (token.student_id) {
+                absentStudents.push(token.student_id)
+                await markStudentAsAbsent(token.student_id)
+                token.student_id = null
+            }
+        }
+        return { expiredCount: expiredTokens.length, absentStudents }
+    }
+
+    // Get tokens to expire with their student_ids
+    const { results: tokensToExpire } = await db.prepare(
+        'SELECT id, student_id FROM tokens WHERE status = "activated" AND activated_at < ?'
+    ).bind(cutoffTime).all<{ id: number; student_id: string | null }>()
+
+    if (!tokensToExpire || tokensToExpire.length === 0) {
+        return { expiredCount: 0, absentStudents: [] }
+    }
+
+    const absentStudents: string[] = []
+    for (const token of tokensToExpire) {
+        if (token.student_id) {
+            absentStudents.push(token.student_id)
+            await markStudentAsAbsent(token.student_id)
+        }
+    }
+
+    // Expire tokens and clear student_id
+    await db.prepare(
+        'UPDATE tokens SET status = "expired", student_id = NULL WHERE status = "activated" AND activated_at < ?'
+    ).bind(cutoffTime).run()
+
+    return { expiredCount: tokensToExpire.length, absentStudents }
+}
+
+// =====================================================
+// RATE LIMITING
+// =====================================================
+
+export async function checkRateLimit(identifier: string, action: string, maxAttempts: number = 5, windowMinutes: number = 15): Promise<{ allowed: boolean; remainingAttempts: number }> {
+    const db = getDB()
+    const windowStart = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString()
+
+    if (!db) {
+        // Simple in-memory rate limiting for dev
+        return { allowed: true, remainingAttempts: maxAttempts }
+    }
+
+    // Clean old entries
+    await db.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(windowStart).run()
+
+    // Check current attempts
+    const current = await db.prepare(
+        'SELECT attempt_count FROM rate_limits WHERE identifier = ? AND action = ? AND window_start > ?'
+    ).bind(identifier, action, windowStart).first<{ attempt_count: number }>()
+
+    const currentCount = current?.attempt_count || 0
+
+    if (currentCount >= maxAttempts) {
+        return { allowed: false, remainingAttempts: 0 }
+    }
+
+    // Increment or insert
+    if (current) {
+        await db.prepare(
+            'UPDATE rate_limits SET attempt_count = attempt_count + 1 WHERE identifier = ? AND action = ?'
+        ).bind(identifier, action).run()
+    } else {
+        await db.prepare(
+            'INSERT INTO rate_limits (identifier, action, attempt_count) VALUES (?, ?, 1)'
+        ).bind(identifier, action).run()
+    }
+
+    return { allowed: true, remainingAttempts: maxAttempts - currentCount - 1 }
+}
+
+export async function resetRateLimit(identifier: string, action: string): Promise<void> {
+    const db = getDB()
+    if (!db) return
+    await db.prepare('DELETE FROM rate_limits WHERE identifier = ? AND action = ?').bind(identifier, action).run()
 }
