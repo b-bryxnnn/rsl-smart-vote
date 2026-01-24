@@ -8,6 +8,7 @@ export async function GET() {
         let envInfo = "Attempting to getRequestContext"
         let dbStatus = "Unknown"
         let errorMsg = null
+        let sampleStudents: any[] = []
 
         try {
             const ctx = getRequestContext()
@@ -19,6 +20,12 @@ export async function GET() {
 
                 if (ctx.env.DB) {
                     dbStatus = "DB binding found"
+
+                    // Query sample students to debug
+                    const { results } = await ctx.env.DB.prepare(
+                        'SELECT student_id, prefix, first_name, last_name, level, room FROM students LIMIT 5'
+                    ).all()
+                    sampleStudents = results || []
                 } else {
                     dbStatus = "DB binding MISSING in ctx.env"
                 }
@@ -35,6 +42,7 @@ export async function GET() {
             status: 'Debug Info',
             envInfo,
             dbStatus,
+            sampleStudents,
             error: errorMsg,
             timestamp: new Date().toISOString()
         })

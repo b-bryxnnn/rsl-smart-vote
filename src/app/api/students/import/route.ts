@@ -146,13 +146,13 @@ function parseExcel(base64Data: string): StudentRow[] {
             }
 
             // 3. Detect Table Header - support multiple column formats
-            if (!headerFound && (row.includes('เลขประจำตัว') || row.includes('เลขที่'))) {
+            if (!headerFound && (row.includes('เลขประจำตัว') || row.includes('รหัสประจำตัว') || row.includes('เลขที่'))) {
                 headerFound = true
                 // Map columns - support both combined and separate name columns
                 row.forEach((cell: any, idx: number) => {
                     if (typeof cell !== 'string') return
                     const val = cell.trim()
-                    if (val.includes('เลขประจำตัว')) colMap['id'] = idx
+                    if (val.includes('เลขประจำตัว') || val.includes('รหัสประจำตัว')) colMap['id'] = idx
                     // Check for separate columns: คำนำหน้า, ชื่อ, สกุล/นามสกุล
                     else if (val === 'คำนำหน้า' || val.includes('คำนำหน้า')) colMap['prefix'] = idx
                     else if ((val === 'ชื่อ' || val === 'ชื่อ - สกุล') && !val.includes('สกุล') && !colMap['first_name']) colMap['first_name'] = idx
