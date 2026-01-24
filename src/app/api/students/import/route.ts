@@ -150,17 +150,18 @@ function parseExcel(base64Data: string): StudentRow[] {
                 headerFound = true
                 // Map columns - support both combined and separate name columns
                 row.forEach((cell: any, idx: number) => {
-                    if (typeof cell !== 'string') return
-                    const val = cell.trim()
+                    // Convert cell to string first
+                    const val = cell != null ? String(cell).trim() : ''
+                    if (!val) return
+
                     if (val.includes('เลขประจำตัว') || val.includes('รหัสประจำตัว')) colMap['id'] = idx
                     // Check for separate columns: คำนำหน้า, ชื่อ, สกุล/นามสกุล
-                    else if (val === 'คำนำหน้า' || val.includes('คำนำหน้า')) colMap['prefix'] = idx
-                    else if ((val === 'ชื่อ' || val === 'ชื่อ - สกุล') && !val.includes('สกุล') && !colMap['first_name']) colMap['first_name'] = idx
-                    else if (val === 'สกุล' || val === 'นามสกุล' || val.includes('นามสกุล')) colMap['last_name'] = idx
-                    // Fallback for combined name column "ชื่อ - สกุล" or "ชื่อ-สกุล"
-                    else if ((val.includes('ชื่อ') && val.includes('สกุล')) || val === 'ชื่อ - สกุล') colMap['name'] = idx
-                    // Fallback: if just "ชื่อ" and no first_name yet
-                    else if (val.includes('ชื่อ') && !colMap['first_name'] && !colMap['name']) colMap['first_name'] = idx
+                    else if (val.includes('คำนำหน้า')) colMap['prefix'] = idx
+                    else if (val === 'นามสกุล' || val === 'สกุล') colMap['last_name'] = idx
+                    // Combined name column "ชื่อ - สกุล" or "ชื่อ-สกุล"
+                    else if (val.includes('ชื่อ') && val.includes('สกุล')) colMap['name'] = idx
+                    // Single ชื่อ column (first_name only)
+                    else if (val === 'ชื่อ' && !colMap['first_name']) colMap['first_name'] = idx
                 })
                 continue
             }
