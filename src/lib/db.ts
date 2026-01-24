@@ -1,5 +1,5 @@
-// D1 Database wrapper for Cloudflare
-// This file provides database operations using D1
+// Mock Database for local development on Windows
+// This file provides mock data when D1 is not available
 
 import { getRequestContext } from '@cloudflare/next-on-pages'
 
@@ -52,8 +52,42 @@ export interface PrintLog {
     printed_by: string | null
 }
 
-// Get D1 database from request context
+// In-memory mock data stores
+const mockParties: Party[] = [
+    { id: 1, name: 'พรรคพัฒนาโรงเรียน', number: 1, created_at: new Date().toISOString() },
+    { id: 2, name: 'พรรคเพื่อนักเรียน', number: 2, created_at: new Date().toISOString() },
+    { id: 3, name: 'พรรคอนาคตใหม่', number: 3, created_at: new Date().toISOString() },
+]
+
+const mockTokens: Token[] = []
+const mockVotes: Vote[] = []
+// Global store check for persistence during HMR
+const globalStore = (global as any)
+if (!globalStore.mockPrintLogs) globalStore.mockPrintLogs = []
+const mockPrintLogs: PrintLog[] = globalStore.mockPrintLogs
+const mockStudents: Student[] = [
+    { id: 1, student_id: '12345', prefix: 'นาย', first_name: 'ทดสอบ', last_name: 'ระบบ', level: 'ม.4', room: '1', has_voted: 0, voted_at: null },
+]
+
+let tokenIdCounter = 1
+let voteIdCounter = 1
+let printLogIdCounter = 1
+
+// Check if we're running locally (D1 not available)
+function isLocalDev(): boolean {
+    try {
+        getRequestContext()
+        return false
+    } catch {
+        return true
+    }
+}
+
+// Get D1 database from request context (only works on Cloudflare)
 function getDB() {
+    if (isLocalDev()) {
+        return null // Return null for local dev
+    }
     const { env } = getRequestContext()
     return env.DB
 }
@@ -61,17 +95,33 @@ function getDB() {
 // Students
 export async function getStudentByStudentId(studentId: string): Promise<Student | null> {
     const db = getDB()
+    if (!db) {
+        return mockStudents.find(s => s.student_id === studentId) || null
+    }
     const result = await db.prepare('SELECT * FROM students WHERE student_id = ?').bind(studentId).first<Student>()
     return result || null
 }
 
 export async function markStudentAsVoted(studentId: string): Promise<void> {
     const db = getDB()
+    if (!db) {
+        const student = mockStudents.find(s => s.student_id === studentId)
+        if (student) {
+            student.has_voted = 1
+            student.voted_at = new Date().toISOString()
+        }
+        return
+    }
     await db.prepare('UPDATE students SET has_voted = 1, voted_at = datetime("now") WHERE student_id = ?').bind(studentId).run()
 }
 
 export async function getStudentVoteStats(): Promise<{ total: number; voted: number }> {
     const db = getDB()
+    if (!db) {
+        const total = mockStudents.length
+        const voted = mockStudents.filter(s => s.has_voted === 1).length
+        return { total, voted }
+    }
     const total = await db.prepare('SELECT COUNT(*) as count FROM students').first<{ count: number }>()
     const voted = await db.prepare('SELECT COUNT(*) as count FROM students WHERE has_voted = 1').first<{ count: number }>()
     return { total: total?.count || 0, voted: voted?.count || 0 }
@@ -80,12 +130,25 @@ export async function getStudentVoteStats(): Promise<{ total: number; voted: num
 // Parties
 export async function getAllParties(): Promise<Party[]> {
     const db = getDB()
+    if (!db) {
+        return [...mockParties].sort((a, b) => a.number - b.number)
+    }
     const { results } = await db.prepare('SELECT * FROM parties ORDER BY number ASC').all<Party>()
     return results || []
 }
 
 export async function createParty(name: string, number: number): Promise<Party> {
     const db = getDB()
+    if (!db) {
+        const newParty: Party = {
+            id: mockParties.length + 1,
+            name,
+            number,
+            created_at: new Date().toISOString()
+        }
+        mockParties.push(newParty)
+        return newParty
+    }
     const result = await db.prepare('INSERT INTO parties (name, number) VALUES (?, ?) RETURNING *').bind(name, number).first<Party>()
     if (!result) throw new Error('Failed to create party')
     return result
@@ -93,23 +156,54 @@ export async function createParty(name: string, number: number): Promise<Party> 
 
 export async function updateParty(id: number, name: string, number: number): Promise<void> {
     const db = getDB()
+    if (!db) {
+        const party = mockParties.find(p => p.id === id)
+        if (party) {
+            party.name = name
+            party.number = number
+        }
+        return
+    }
     await db.prepare('UPDATE parties SET name = ?, number = ? WHERE id = ?').bind(name, number, id).run()
 }
 
 export async function deleteParty(id: number): Promise<void> {
     const db = getDB()
+    if (!db) {
+        const index = mockParties.findIndex(p => p.id === id)
+        if (index !== -1) mockParties.splice(index, 1)
+        return
+    }
     await db.prepare('DELETE FROM parties WHERE id = ?').bind(id).run()
 }
 
 // Tokens
 export async function getTokenByCode(code: string): Promise<Token | null> {
     const db = getDB()
+    if (!db) {
+        return mockTokens.find(t => t.code === code) || null
+    }
     const result = await db.prepare('SELECT * FROM tokens WHERE code = ?').bind(code).first<Token>()
     return result || null
 }
 
 export async function createTokens(tokens: { code: string; print_batch_id: string }[]): Promise<void> {
     const db = getDB()
+    if (!db) {
+        for (const t of tokens) {
+            mockTokens.push({
+                id: tokenIdCounter++,
+                code: t.code,
+                status: 'inactive',
+                station_level: null,
+                print_batch_id: t.print_batch_id,
+                activated_at: null,
+                used_at: null,
+                created_at: new Date().toISOString()
+            })
+        }
+        return
+    }
     const stmt = db.prepare('INSERT INTO tokens (code, print_batch_id) VALUES (?, ?)')
     const batch = tokens.map(t => stmt.bind(t.code, t.print_batch_id))
     await db.batch(batch)
@@ -117,6 +211,15 @@ export async function createTokens(tokens: { code: string; print_batch_id: strin
 
 export async function activateToken(code: string): Promise<boolean> {
     const db = getDB()
+    if (!db) {
+        const token = mockTokens.find(t => t.code === code && t.status === 'inactive')
+        if (token) {
+            token.status = 'activated'
+            token.activated_at = new Date().toISOString()
+            return true
+        }
+        return false
+    }
     const result = await db.prepare(
         'UPDATE tokens SET status = "activated", activated_at = datetime("now") WHERE code = ? AND status = "inactive"'
     ).bind(code).run()
@@ -125,6 +228,15 @@ export async function activateToken(code: string): Promise<boolean> {
 
 export async function useToken(code: string): Promise<boolean> {
     const db = getDB()
+    if (!db) {
+        const token = mockTokens.find(t => t.code === code && t.status === 'activated')
+        if (token) {
+            token.status = 'used'
+            token.used_at = new Date().toISOString()
+            return true
+        }
+        return false
+    }
     const result = await db.prepare(
         'UPDATE tokens SET status = "used", used_at = datetime("now") WHERE code = ? AND status = "activated"'
     ).bind(code).run()
@@ -133,6 +245,13 @@ export async function useToken(code: string): Promise<boolean> {
 
 export async function getTokenStats(): Promise<{ inactive: number; activated: number; used: number }> {
     const db = getDB()
+    if (!db) {
+        return {
+            inactive: mockTokens.filter(t => t.status === 'inactive').length,
+            activated: mockTokens.filter(t => t.status === 'activated').length,
+            used: mockTokens.filter(t => t.status === 'used').length,
+        }
+    }
     const inactive = await db.prepare('SELECT COUNT(*) as count FROM tokens WHERE status = "inactive"').first<{ count: number }>()
     const activated = await db.prepare('SELECT COUNT(*) as count FROM tokens WHERE status = "activated"').first<{ count: number }>()
     const used = await db.prepare('SELECT COUNT(*) as count FROM tokens WHERE status = "used"').first<{ count: number }>()
@@ -146,6 +265,17 @@ export async function getTokenStats(): Promise<{ inactive: number; activated: nu
 // Votes
 export async function createVote(partyId: number | null, stationLevel: string, tokenId: number, isAbstain: boolean): Promise<void> {
     const db = getDB()
+    if (!db) {
+        mockVotes.push({
+            id: voteIdCounter++,
+            party_id: partyId,
+            station_level: stationLevel,
+            token_id: tokenId,
+            is_abstain: isAbstain ? 1 : 0,
+            created_at: new Date().toISOString()
+        })
+        return
+    }
     await db.prepare(
         'INSERT INTO votes (party_id, station_level, token_id, is_abstain) VALUES (?, ?, ?, ?)'
     ).bind(partyId, stationLevel, tokenId, isAbstain ? 1 : 0).run()
@@ -157,6 +287,17 @@ export async function getVoteResults(): Promise<{
     totalVotes: number;
 }> {
     const db = getDB()
+    if (!db) {
+        const partyVotes = mockParties.map(p => ({
+            id: p.id,
+            name: p.name,
+            number: p.number,
+            vote_count: mockVotes.filter(v => v.party_id === p.id && !v.is_abstain).length
+        }))
+        const abstainCount = mockVotes.filter(v => v.is_abstain === 1).length
+        const totalVotes = mockVotes.length
+        return { partyVotes, abstainCount, totalVotes }
+    }
 
     const { results: partyVotes } = await db.prepare(`
         SELECT p.id, p.name, p.number, COALESCE(COUNT(v.id), 0) as vote_count
@@ -179,6 +320,17 @@ export async function getVoteResults(): Promise<{
 // Print Logs
 export async function createPrintLog(batchId: string, tokenCount: number, stationLevel?: string, printedBy?: string): Promise<void> {
     const db = getDB()
+    if (!db) {
+        mockPrintLogs.push({
+            id: Date.now(),
+            batch_id: batchId,
+            token_count: tokenCount,
+            station_level: stationLevel || null,
+            printed_at: new Date().toISOString(),
+            printed_by: printedBy || null
+        })
+        return
+    }
     await db.prepare(
         'INSERT INTO print_logs (batch_id, token_count, station_level, printed_by) VALUES (?, ?, ?, ?)'
     ).bind(batchId, tokenCount, stationLevel || null, printedBy || null).run()
@@ -186,18 +338,40 @@ export async function createPrintLog(batchId: string, tokenCount: number, statio
 
 export async function getPrintLogs(): Promise<PrintLog[]> {
     const db = getDB()
+    if (!db) {
+        return [...mockPrintLogs].sort((a, b) => new Date(b.printed_at).getTime() - new Date(a.printed_at).getTime())
+    }
     const { results } = await db.prepare('SELECT * FROM print_logs ORDER BY printed_at DESC').all<PrintLog>()
     return results || []
 }
 
 export async function getTokensByBatchId(batchId: string): Promise<Token[]> {
     const db = getDB()
+    if (!db) {
+        return mockTokens.filter(t => t.print_batch_id === batchId)
+    }
     const { results } = await db.prepare('SELECT * FROM tokens WHERE print_batch_id = ?').bind(batchId).all<Token>()
     return results || []
 }
 
 export async function deleteTokensByBatchId(batchId: string): Promise<{ deleted: number; hasUsedTokens: boolean }> {
     const db = getDB()
+    if (!db) {
+        const usedCount = mockTokens.filter(t => t.print_batch_id === batchId && t.status === 'used').length
+        if (usedCount > 0) {
+            return { deleted: 0, hasUsedTokens: true }
+        }
+        const beforeCount = mockTokens.length
+        const filteredTokens = mockTokens.filter(t => t.print_batch_id !== batchId)
+        mockTokens.length = 0
+        mockTokens.push(...filteredTokens)
+
+        const filteredLogs = mockPrintLogs.filter(l => l.batch_id !== batchId)
+        mockPrintLogs.length = 0
+        mockPrintLogs.push(...filteredLogs)
+
+        return { deleted: beforeCount - mockTokens.length, hasUsedTokens: false }
+    }
 
     // Check if any tokens in this batch have been used
     const usedCheck = await db.prepare(
@@ -220,6 +394,9 @@ export async function deleteTokensByBatchId(batchId: string): Promise<{ deleted:
 // Party count for stats
 export async function getPartyCount(): Promise<number> {
     const db = getDB()
+    if (!db) {
+        return mockParties.length
+    }
     const result = await db.prepare('SELECT COUNT(*) as count FROM parties').first<{ count: number }>()
     return result?.count || 0
 }

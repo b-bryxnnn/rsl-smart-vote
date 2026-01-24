@@ -47,12 +47,17 @@ export default function VotePage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token, partyId: selectedParty?.id, isAbstain }),
             })
-            if ((await res.json() as any).success) {
+            const data = await res.json() as any
+            if (data.success) {
                 sessionStorage.removeItem('voting_token')
                 router.push('/success')
+            } else {
+                alert(data.message || 'เกิดข้อผิดพลาดในการลงคะแนน')
+                setShowConfirm(false)
             }
         } catch {
-            // Handle error
+            alert('การเชื่อมต่อล้มเหลว กรุณาลองใหม่อีกครั้ง')
+            setShowConfirm(false)
         } finally {
             setSubmitting(false)
         }

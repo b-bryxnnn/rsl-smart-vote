@@ -111,13 +111,18 @@ export const LEVEL_OPTIONS = [
     { value: 'ม.6', label: 'มัธยมศึกษาปีที่ 6' },
 ]
 
-// Station level from localStorage
+// Station level from sessionStorage (clears when tab is closed)
 export function getStationLevel(): string | null {
     if (typeof window === 'undefined') return null
-    return localStorage.getItem('station_level')
+    return sessionStorage.getItem('station_level')
 }
 
 export function setStationLevel(level: string): void {
     if (typeof window === 'undefined') return
-    localStorage.setItem('station_level', level)
+    sessionStorage.setItem('station_level', level)
+}
+
+export function clearStationLevel(): void {
+    if (typeof window === 'undefined') return
+    sessionStorage.removeItem('station_level')
 }

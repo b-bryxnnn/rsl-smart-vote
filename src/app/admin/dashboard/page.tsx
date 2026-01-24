@@ -193,6 +193,7 @@ export default function AdminDashboardPage() {
     // Confirm print - saves tokens to database
     const handleConfirmPrint = async () => {
         setConfirmingPrint(true)
+        setError(null)
         try {
             const response = await fetch('/api/tokens/confirm-print', {
                 method: 'POST',
@@ -205,15 +206,23 @@ export default function AdminDashboardPage() {
             })
             const data = await response.json() as any
             if (data.success) {
+                // Print first
                 window.print()
+                // Then close modal and clear state
+                setShowPrintPreview(false)
+                setGeneratedTokens([])
+                setPreviewTokenCodes([])
+                setCurrentBatchId('')
+                // Refresh data to show new tokens in history
                 await fetchData()
-                setSuccess(`พิมพ์และบันทึก ${previewTokenCodes.length} Token`)
+                setSuccess(`พิมพ์และบันทึก ${previewTokenCodes.length} Token เรียบร้อย`)
                 setTimeout(() => setSuccess(null), 3000)
             } else {
-                setError(data.message)
+                setError(data.message || 'เกิดข้อผิดพลาดในการบันทึก')
             }
-        } catch {
-            setError('เกิดข้อผิดพลาด')
+        } catch (err) {
+            console.error('Print error:', err)
+            setError('เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่')
         } finally {
             setConfirmingPrint(false)
         }
@@ -331,7 +340,7 @@ export default function AdminDashboardPage() {
                         { id: 'stats', label: 'สถิติ', icon: AlertCircle },
                     ].map(tab => (
                         <button
-                            key={tab.id}
+                            key={`tab-${tab.id}`}
                             onClick={() => setActiveTab(tab.id as any)}
                             className={`flex items-center gap-2 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
                                 ? 'border-slate-900 text-slate-900'
@@ -349,74 +358,86 @@ export default function AdminDashboardPage() {
             <main className="max-w-6xl mx-auto px-6 py-8 no-print">
                 <AnimatePresence>
                     {error && (
-                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-6 p-4 bg-red-50 text-red-700 rounded-lg border border-red-100 flex items-center gap-3">
+                        <motion.div key="error-banner" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-6 p-4 bg-red-50 text-red-700 rounded-lg border border-red-100 flex items-center gap-3">
                             <AlertCircle className="w-5 h-5" />
                             {error}
                             <button onClick={() => setError(null)} className="ml-auto"><XCircle className="w-5 h-5" /></button>
                         </motion.div>
                     )}
                     {success && (
-                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-6 p-4 bg-green-50 text-green-700 rounded-lg border border-green-100 flex items-center gap-3">
+                        <motion.div key="success-banner" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-6 p-4 bg-green-50 text-green-700 rounded-lg border border-green-100 flex items-center gap-3">
                             <CheckCircle className="w-5 h-5" />
                             {success}
                         </motion.div>
                     )}
-                    {activeTab === 'stats' && stats && (
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                    <p className="text-sm text-slate-500 mb-1">จำนวนพรรค</p>
-                                    <p className="text-3xl font-bold text-slate-900">{stats.parties}</p>
+                    {activeTab === 'stats' && (
+                        <motion.div key="stats-view" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="space-y-6">
+                            {!stats ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                                    <Loader2 className="w-8 h-8 animate-spin mb-4" />
+                                    <p>กำลังโหลดข้อมูลสถิติ...</p>
+                                    <button onClick={fetchData} className="mt-4 text-sm text-slate-600 hover:text-slate-900 underline">
+                                        ลองใหม่อีกครั้ง
+                                    </button>
                                 </div>
-                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                    <p className="text-sm text-slate-500 mb-1">Token ทั้งหมด</p>
-                                    <p className="text-3xl font-bold text-blue-600">
-                                        {stats.tokens.inactive + stats.tokens.activated + stats.tokens.used}
-                                    </p>
-                                </div>
-                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                    <p className="text-sm text-slate-500 mb-1">ใช้สิทธิ์แล้ว</p>
-                                    <p className="text-3xl font-bold text-green-600">{stats.students.voted}</p>
-                                </div>
-                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                    <p className="text-sm text-slate-500 mb-1">ยังไม่ใช้สิทธิ์</p>
-                                    <p className="text-3xl font-bold text-orange-500">
-                                        {stats.students.total - stats.students.voted}
-                                    </p>
-                                </div>
-                            </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                            <p className="text-sm text-slate-500 mb-1">จำนวนพรรค</p>
+                                            <p className="text-3xl font-bold text-slate-900">{stats.parties}</p>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                            <p className="text-sm text-slate-500 mb-1">Token ทั้งหมด</p>
+                                            <p className="text-3xl font-bold text-blue-600">
+                                                {stats.tokens.inactive + stats.tokens.activated + stats.tokens.used}
+                                            </p>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                            <p className="text-sm text-slate-500 mb-1">ใช้สิทธิ์แล้ว</p>
+                                            <p className="text-3xl font-bold text-green-600">{stats.students.voted}</p>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                            <p className="text-sm text-slate-500 mb-1">ยังไม่ใช้สิทธิ์</p>
+                                            <p className="text-3xl font-bold text-orange-500">
+                                                {stats.students.total - stats.students.voted}
+                                            </p>
+                                        </div>
+                                    </div>
 
-                            {/* Test Mode / Danger Zone */}
-                            <div className="bg-red-50 border border-red-100 rounded-xl p-6 mt-8">
-                                <h3 className="text-lg font-bold text-red-800 flex items-center gap-2 mb-4">
-                                    <ShieldAlert className="w-5 h-5" />
-                                    System Management (Testing)
-                                </h3>
-                                <div className="flex gap-4">
-                                    <button
-                                        onClick={handleClearHistory}
-                                        disabled={resetting}
-                                        className="px-4 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium flex items-center gap-2"
-                                    >
-                                        <History className="w-4 h-4" /> ล้างประวัติการพิมพ์
-                                    </button>
-                                    <button
-                                        onClick={handleSystemReset}
-                                        disabled={resetting}
-                                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center gap-2 shadow-sm"
-                                    >
-                                        <RotateCcw className="w-4 h-4" /> รีเซ็ตระบบเลือกตั้ง
-                                    </button>
-                                </div>
-                                <p className="text-xs text-red-500 mt-4">
-                                    * รีเซ็ตระบบเลือกตั้ง = ลบ Token, คะแนน, และประวัติการพิมพ์ทั้งหมด (เก็บรายชื่อนักเรียนและพรรคไว้)
-                                </p>
-                            </div>
-                        </div>
+                                    {/* Test Mode / Danger Zone */}
+                                    <div className="bg-red-50 border border-red-100 rounded-xl p-6 mt-8">
+                                        <h3 className="text-lg font-bold text-red-800 flex items-center gap-2 mb-4">
+                                            <ShieldAlert className="w-5 h-5" />
+                                            System Management (Testing)
+                                        </h3>
+                                        <div className="flex gap-4">
+                                            <button
+                                                onClick={handleClearHistory}
+                                                disabled={resetting}
+                                                className="px-4 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium flex items-center gap-2"
+                                            >
+                                                <History className="w-4 h-4" /> ล้างประวัติการพิมพ์
+                                            </button>
+                                            <button
+                                                onClick={handleSystemReset}
+                                                disabled={resetting}
+                                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center gap-2 shadow-sm"
+                                            >
+                                                <RotateCcw className="w-4 h-4" /> รีเซ็ตระบบเลือกตั้ง
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-red-500 mt-4">
+                                            * รีเซ็ตระบบเลือกตั้ง = ลบ Token, คะแนน, และประวัติการพิมพ์ทั้งหมด (เก็บรายชื่อนักเรียนและพรรคไว้)
+                                        </p>
+                                    </div>
+                                </>
+                            )}
+                        </motion.div>
                     )}
 
                     {activeTab === 'parties' && (
-                        <div className="space-y-6">
+                        <motion.div key="parties-view" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="space-y-6">
                             <div className="flex justify-between items-center">
                                 <h2 className="text-xl font-bold">พรรคการเมือง</h2>
                                 <button onClick={() => setShowPartyForm(true)} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors">
@@ -425,7 +446,7 @@ export default function AdminDashboardPage() {
                             </div>
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {parties.map(p => (
-                                    <div key={p.id} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+                                    <div key={`party-${p.id}`} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
                                         <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-xl font-bold text-slate-700">{p.number}</div>
                                         <div className="flex-1">
                                             <div className="font-bold text-slate-900">{p.name}</div>
@@ -438,11 +459,11 @@ export default function AdminDashboardPage() {
                                     </div>
                                 ))}
                             </div>
-                        </div>
+                        </motion.div>
                     )}
 
                     {activeTab === 'tokens' && (
-                        <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+                        <motion.div key="tokens-view" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="max-w-2xl mx-auto bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
                             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                                 <Printer className="w-6 h-6 text-slate-700" />
                                 พิมพ์บัตรเลือกตั้ง
@@ -471,11 +492,11 @@ export default function AdminDashboardPage() {
                                     </p>
                                 </div>
                             </div>
-                        </div>
+                        </motion.div>
                     )}
 
                     {activeTab === 'students' && (
-                        <div className="max-w-2xl mx-auto bg-white p-10 rounded-2xl border border-slate-200 shadow-sm text-center">
+                        <motion.div key="students-view" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="max-w-2xl mx-auto bg-white p-10 rounded-2xl border border-slate-200 shadow-sm text-center">
                             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <FileSpreadsheet className="w-8 h-8 text-slate-400" />
                             </div>
@@ -486,11 +507,11 @@ export default function AdminDashboardPage() {
                                 {uploading ? <Loader2 className="animate-spin w-5 h-5" /> : <Upload className="w-5 h-5" />}
                                 เลือกไฟล์ CSV
                             </label>
-                        </div>
+                        </motion.div>
                     )}
 
                     {activeTab === 'history' && (
-                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <motion.div key="history-view" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                             <table className="w-full text-left">
                                 <thead className="bg-slate-50 border-b border-slate-200">
                                     <tr>
@@ -502,7 +523,7 @@ export default function AdminDashboardPage() {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {printLogs.map(log => (
-                                        <tr key={log.id} className="hover:bg-slate-50">
+                                        <tr key={`log-${log.id}`} className="hover:bg-slate-50">
                                             <td className="px-6 py-4 font-mono text-slate-600 text-sm">{log.batch_id}</td>
                                             <td className="px-6 py-4 text-slate-900">{log.token_count}</td>
                                             <td className="px-6 py-4 text-slate-500 text-sm">{new Date(log.printed_at).toLocaleString('th-TH')}</td>
@@ -521,7 +542,7 @@ export default function AdminDashboardPage() {
                             {printLogs.length === 0 && (
                                 <div className="p-8 text-center text-slate-400">ยังไม่มีประวัติการพิมพ์</div>
                             )}
-                        </div>
+                        </motion.div>
                     )}
                 </AnimatePresence>
             </main>
@@ -565,16 +586,18 @@ export default function AdminDashboardPage() {
                     <div className="flex-1 overflow-auto p-8 bg-slate-500">
                         <div className="flex flex-col items-center gap-8">
                             {/* Show ALL pages in preview */}
-                            <PrintLayout tokens={generatedTokens} batchId={currentBatchId} startNumber={tokenStartNumber} debugMode />
+                            <PrintLayout tokens={generatedTokens} batchId={currentBatchId} startNumber={tokenStartNumber} prefix="preview" debugMode />
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Hidden Print Layout */}
-            <div className="hidden print:block">
-                <PrintLayout tokens={generatedTokens} batchId={currentBatchId} startNumber={tokenStartNumber} />
-            </div>
+            {/* Hidden Print Layout - only render when there are tokens */}
+            {generatedTokens.length > 0 && (
+                <div className="hidden print:block">
+                    <PrintLayout tokens={generatedTokens} batchId={currentBatchId} startNumber={tokenStartNumber} prefix="print" />
+                </div>
+            )}
         </div>
     )
 }
@@ -582,7 +605,7 @@ export default function AdminDashboardPage() {
 // ----------------------------------------------------------------------
 // Perfect A4 Layout: 6 Cards (2 cols x 3 rows)
 // ----------------------------------------------------------------------
-function PrintLayout({ tokens, batchId, startNumber, debugMode = false }: { tokens: GeneratedToken[]; batchId: string; startNumber: number; debugMode?: boolean }) {
+function PrintLayout({ tokens, batchId, startNumber, prefix = 'layout', debugMode = false }: { tokens: GeneratedToken[]; batchId: string; startNumber: number; prefix?: string; debugMode?: boolean }) {
     const pages = []
     for (let i = 0; i < tokens.length; i += 6) {
         pages.push(tokens.slice(i, i + 6))
@@ -628,12 +651,12 @@ function PrintLayout({ tokens, batchId, startNumber, debugMode = false }: { toke
       `}</style>
 
             {pages.map((pageTokens, pageIndex) => (
-                <div key={pageIndex} className="a4-page">
+                <div key={`${prefix}-page-${pageIndex}`} className="a4-page">
                     {pageTokens.map((token, index) => {
                         const globalIndex = pageIndex * 6 + index
                         const currentNumber = startNumber + globalIndex
                         return (
-                            <div key={token.code} className="ballot-card">
+                            <div key={`${prefix}-card-${globalIndex}`} className="ballot-card">
                                 {/* Header & Logo */}
                                 <div className="w-full flex items-center justify-between border-b-2 border-slate-900 pb-1.5 mb-1">
                                     {/* Logo - put logo.png in /public folder */}
