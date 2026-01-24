@@ -414,11 +414,12 @@ export default function AdminDashboardPage() {
                                     </div>
 
                                     {/* Stats by Level (Turnout) */}
-                                    {stats.studentsByLevel && stats.studentsByLevel.length > 0 && (
-                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                                            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-                                                <h3 className="font-bold text-slate-800">สถิติการใช้สิทธิ์แยกตามชั้นปี</h3>
-                                            </div>
+                                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                            <h3 className="font-bold text-slate-800">สถิติการใช้สิทธิ์แยกตามชั้นปี</h3>
+                                            <span className="text-xs text-slate-500 font-normal">* ข้อมูลจะแสดงเมื่อมีการนำเข้า "ฐานข้อมูลรายชื่อ"</span>
+                                        </div>
+                                        {stats.studentsByLevel && stats.studentsByLevel.length > 0 ? (
                                             <table className="w-full text-left">
                                                 <thead className="bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                                                     <tr>
@@ -451,15 +452,19 @@ export default function AdminDashboardPage() {
                                                     })}
                                                 </tbody>
                                             </table>
-                                        </div>
-                                    )}
+                                        ) : (
+                                            <div className="p-8 text-center text-slate-400 bg-slate-50/50">
+                                                ยังไม่มีข้อมูลนักเรียน (กรุณาไปที่เมนู "ฐานข้อมูล" เพื่อนำเข้าไฟล์ Excel)
+                                            </div>
+                                        )}
+                                    </div>
 
                                     {/* Stats by Party (Vote Breakdown) */}
-                                    {stats.partyVotesByLevel && stats.partyVotesByLevel.length > 0 && (
-                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                                            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-                                                <h3 className="font-bold text-slate-800">ผลคะแนนแยกตามชั้นปี (Vote Breakdown)</h3>
-                                            </div>
+                                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                                            <h3 className="font-bold text-slate-800">ผลคะแนนแยกตามชั้นปี (Vote Breakdown)</h3>
+                                        </div>
+                                        {stats.partyVotesByLevel && stats.partyVotesByLevel.length > 0 ? (
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-left whitespace-nowrap">
                                                     <thead className="bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -491,8 +496,12 @@ export default function AdminDashboardPage() {
                                                     </tbody>
                                                 </table>
                                             </div>
-                                        </div>
-                                    )}
+                                        ) : (
+                                            <div className="p-8 text-center text-slate-400 bg-slate-50/50">
+                                                ยังไม่มีการลงคะแนน
+                                            </div>
+                                        )}
+                                    </div>
 
                                     {/* System Management (Refined) */}
                                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-8">
@@ -501,84 +510,96 @@ export default function AdminDashboardPage() {
                                             จัดการข้อมูลระบบ (System Data Management)
                                         </h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                            <button
-                                                onClick={handleClearHistory}
-                                                disabled={resetting}
-                                                className="px-4 py-3 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 font-medium flex items-center justify-center gap-2 transition-colors"
-                                            >
-                                                <History className="w-4 h-4" /> ล้างประวัติการพิมพ์
-                                            </button>
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    onClick={handleClearHistory}
+                                                    disabled={resetting}
+                                                    className="w-full px-4 py-3 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 font-medium flex items-center justify-center gap-2 transition-colors"
+                                                >
+                                                    <History className="w-4 h-4" /> ล้างประวัติการพิมพ์
+                                                </button>
+                                                <p className="text-xs text-slate-500 text-center">ลบรายการในหน้า "ประวัติ" (History) เท่านั้น ข้อมูลอื่นยังอยู่ครบ</p>
+                                            </div>
 
-                                            <button
-                                                onClick={async () => {
-                                                    if (!confirm('ยืนยันลบ "รายชื่อนักเรียน" ทั้งหมด? (ข้อมูลอื่นๆ จะยังอยู่)')) return
-                                                    setResetting(true)
-                                                    try {
-                                                        const res = await fetch('/api/admin/reset', {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({ mode: 'students' })
-                                                        })
-                                                        const data = await res.json() as any
-                                                        if (data.success) {
-                                                            await fetchData()
-                                                            setSuccess('ลบรายชื่อนักเรียนเรียบร้อย')
-                                                        } else setError(data.message)
-                                                    } finally { setResetting(false) }
-                                                }}
-                                                disabled={resetting}
-                                                className="px-4 py-3 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium flex items-center justify-center gap-2 transition-colors"
-                                            >
-                                                <Users className="w-4 h-4" /> ลบรายชื่อนักเรียน
-                                            </button>
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!confirm('ยืนยันลบ "รายชื่อนักเรียน" ทั้งหมด? (ข้อมูลอื่นๆ จะยังอยู่)')) return
+                                                        setResetting(true)
+                                                        try {
+                                                            const res = await fetch('/api/admin/reset', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ mode: 'students' })
+                                                            })
+                                                            const data = await res.json() as any
+                                                            if (data.success) {
+                                                                await fetchData()
+                                                                setSuccess('ลบรายชื่อนักเรียนเรียบร้อย')
+                                                            } else setError(data.message)
+                                                        } finally { setResetting(false) }
+                                                    }}
+                                                    disabled={resetting}
+                                                    className="w-full px-4 py-3 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium flex items-center justify-center gap-2 transition-colors"
+                                                >
+                                                    <Users className="w-4 h-4" /> ลบรายชื่อนักเรียน
+                                                </button>
+                                                <p className="text-xs text-slate-500 text-center">ลบฐานข้อมูลนักเรียนทั้งหมด เพื่อเตรียมนำเข้าไฟล์ใหม่</p>
+                                            </div>
 
-                                            <button
-                                                onClick={async () => {
-                                                    const code = prompt('พิมพ์ "RESET" เพื่อยืนยันการล้างคะแนนและบัตรเลือกตั้ง (เก็บรายชื่อและพรรคไว้)')
-                                                    if (code !== 'RESET') return
-                                                    setResetting(true)
-                                                    try {
-                                                        const res = await fetch('/api/admin/reset', {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({ mode: 'votes' })
-                                                        })
-                                                        const data = await res.json() as any
-                                                        if (data.success) {
-                                                            await fetchData()
-                                                            setSuccess('รีเซ็ตระบบเลือกตั้งเรียบร้อย')
-                                                        } else setError(data.message)
-                                                    } finally { setResetting(false) }
-                                                }}
-                                                disabled={resetting}
-                                                className="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center justify-center gap-2 shadow-sm transition-colors"
-                                            >
-                                                <RotateCcw className="w-4 h-4" /> รีเซ็ตระบบเลือกตั้ง
-                                            </button>
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    onClick={async () => {
+                                                        const code = prompt('พิมพ์ "RESET" เพื่อยืนยันการล้างคะแนนและบัตรเลือกตั้ง (เก็บรายชื่อและพรรคไว้)')
+                                                        if (code !== 'RESET') return
+                                                        setResetting(true)
+                                                        try {
+                                                            const res = await fetch('/api/admin/reset', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ mode: 'votes' })
+                                                            })
+                                                            const data = await res.json() as any
+                                                            if (data.success) {
+                                                                await fetchData()
+                                                                setSuccess('รีเซ็ตระบบเลือกตั้งเรียบร้อย')
+                                                            } else setError(data.message)
+                                                        } finally { setResetting(false) }
+                                                    }}
+                                                    disabled={resetting}
+                                                    className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center justify-center gap-2 shadow-sm transition-colors"
+                                                >
+                                                    <RotateCcw className="w-4 h-4" /> รีเซ็ตระบบเลือกตั้ง
+                                                </button>
+                                                <p className="text-xs text-slate-500 text-center">ลบคะแนนและ Token ทั้งหมด (รีเซ็ตเป็น 0) แต่ **เก็บ** รายชื่อนักเรียนและพรรคไว้</p>
+                                            </div>
 
-                                            <button
-                                                onClick={async () => {
-                                                    const code = prompt('⚠️ อันตราย: พิมพ์ "FACTORY RESET" เพื่อลางข้อมูลทุกอย่าง (นักเรียน, พรรค, คะแนน, LOG)')
-                                                    if (code !== 'FACTORY RESET') return
-                                                    setResetting(true)
-                                                    try {
-                                                        const res = await fetch('/api/admin/reset', {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({ mode: 'all' })
-                                                        })
-                                                        const data = await res.json() as any
-                                                        if (data.success) {
-                                                            await fetchData()
-                                                            setSuccess('ล้างข้อมูลทั้งระบบเรียบร้อย')
-                                                        } else setError(data.message)
-                                                    } finally { setResetting(false) }
-                                                }}
-                                                disabled={resetting}
-                                                className="px-4 py-3 bg-slate-800 text-white rounded-lg hover:bg-slate-900 font-medium flex items-center justify-center gap-2 shadow-sm transition-colors"
-                                            >
-                                                <ShieldAlert className="w-4 h-4" /> ล้างข้อมูลทั้งหมด
-                                            </button>
+                                            <div className="flex flex-col gap-2">
+                                                <button
+                                                    onClick={async () => {
+                                                        const code = prompt('⚠️ อันตราย: พิมพ์ "FACTORY RESET" เพื่อลางข้อมูลทุกอย่าง (นักเรียน, พรรค, คะแนน, LOG)')
+                                                        if (code !== 'FACTORY RESET') return
+                                                        setResetting(true)
+                                                        try {
+                                                            const res = await fetch('/api/admin/reset', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ mode: 'all' })
+                                                            })
+                                                            const data = await res.json() as any
+                                                            if (data.success) {
+                                                                await fetchData()
+                                                                setSuccess('ล้างข้อมูลทั้งระบบเรียบร้อย')
+                                                            } else setError(data.message)
+                                                        } finally { setResetting(false) }
+                                                    }}
+                                                    disabled={resetting}
+                                                    className="w-full px-4 py-3 bg-slate-800 text-white rounded-lg hover:bg-slate-900 font-medium flex items-center justify-center gap-2 shadow-sm transition-colors"
+                                                >
+                                                    <ShieldAlert className="w-4 h-4" /> ล้างข้อมูลทั้งหมด
+                                                </button>
+                                                <p className="text-xs text-slate-500 text-center">**ล้างทุกอย่าง** ให้เหมือนติดตั้งใหม่ (ลบนักเรียน/พรรค/คะแนน/Log)</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </>
