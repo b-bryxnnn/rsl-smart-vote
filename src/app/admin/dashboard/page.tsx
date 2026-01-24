@@ -163,13 +163,14 @@ export default function AdminDashboardPage() {
     const fetchData = async () => {
         setLoading(true)
         try {
-            const [partiesRes, logsRes, statsRes, usersRes, statusRes, activityLogsRes] = await Promise.all([
+            const headers = { 'Authorization': `Bearer ${sessionToken}` }
+            const [partiesRes, printLogsRes, statsRes, usersRes, statusRes, logsRes] = await Promise.all([
                 fetch('/api/parties'),
-                fetch('/api/print-logs'),
+                fetch('/api/print-logs', { headers }),
                 fetch('/api/stats'),
-                fetch('/api/users'),
-                fetch('/api/election-status'),
-                fetch('/api/activity-logs')
+                fetch('/api/users', { headers }), // Requires Auth
+                fetch('/api/election-status', { headers }),
+                fetch('/api/activity-logs', { headers }) // Requires Auth
             ])
 
             const partiesData = await partiesRes.json() as any
@@ -177,7 +178,7 @@ export default function AdminDashboardPage() {
             const statsData = await statsRes.json() as any
             const usersData = await usersRes.json() as any
             const statusData = await statusRes.json() as any
-            const activityLogsData = await activityLogsRes.json() as any
+            const activityLogsData = await logsRes.json() as any
 
             if (partiesData.success) setParties(partiesData.parties)
             if (logsData.success) setPrintLogs(logsData.logs)
@@ -419,7 +420,10 @@ export default function AdminDashboardPage() {
         try {
             const res = await fetch('/api/election-status', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionToken}`
+                },
                 body: JSON.stringify({ status, scheduledOpenTime: scheduledOpen, scheduledCloseTime: scheduledClose })
             })
             const data = await res.json() as any
@@ -458,7 +462,10 @@ export default function AdminDashboardPage() {
 
             const res = await fetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionToken}`
+                },
                 body: JSON.stringify(userForm)
             })
             const data = await res.json() as any
@@ -475,7 +482,10 @@ export default function AdminDashboardPage() {
     const handleDeleteUser = async (id: number) => {
         if (!confirm('ยืนยันลบผู้ใช้นี้?')) return
         try {
-            const res = await fetch(`/api/users/${id}`, { method: 'DELETE' })
+            const res = await fetch(`/api/users/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${sessionToken}` }
+            })
             const data = await res.json() as any
             if (data.success) {
                 setSuccess('ลบผู้ใช้สำเร็จ')
