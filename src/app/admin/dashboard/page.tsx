@@ -263,9 +263,18 @@ export default function AdminDashboardPage() {
             let body: any = {}
 
             if (isExcel) {
-                // Read as Base64 for Excel
-                const buffer = await file.arrayBuffer()
-                const base64 = Buffer.from(buffer).toString('base64')
+                // Read as Base64 for Excel using FileReader (Browser native)
+                const base64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader()
+                    reader.onload = () => {
+                        const result = reader.result as string
+                        // Remove data URL prefix (e.g., "data:application/vnd...;base64,")
+                        const base64Clean = result.split(',')[1] || ''
+                        resolve(base64Clean)
+                    }
+                    reader.onerror = reject
+                    reader.readAsDataURL(file)
+                })
                 body = { fileType: 'excel', fileData: base64 }
             } else {
                 // Read as Text for CSV
