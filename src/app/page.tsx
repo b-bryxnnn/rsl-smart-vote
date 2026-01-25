@@ -347,7 +347,8 @@ export default function HomePage() {
                   <motion.div
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm text-center break-words"
+                    className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm text-center"
+                    style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
                   >
                     <span className="font-bold">Error:</span> {error}
                   </motion.div>
