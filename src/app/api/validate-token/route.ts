@@ -3,6 +3,14 @@ import { getTokenByCode, setTokenVoting, getElectionStatus } from '@/lib/db'
 
 export const runtime = 'edge'
 
+// Get current Thailand time
+function getThailandNow(): Date {
+    const now = new Date()
+    const thailandOffset = 7 * 60 * 60 * 1000
+    const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000
+    return new Date(utcTime + thailandOffset)
+}
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json() as { code?: string; stationLevel?: string }
@@ -18,9 +26,9 @@ export async function POST(request: NextRequest) {
         // Check election status
         const electionStatus = await getElectionStatus()
 
-        // Check scheduled status
+        // Check scheduled status - use Thailand time
         let effectiveStatus = electionStatus.status
-        const now = new Date()
+        const now = getThailandNow()
         if (electionStatus.status === 'scheduled') {
             if (electionStatus.openTime && new Date(electionStatus.openTime) <= now) {
                 if (!electionStatus.closeTime || new Date(electionStatus.closeTime) > now) {

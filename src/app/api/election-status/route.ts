@@ -3,19 +3,33 @@ import { getElectionStatus, setSystemSetting, getSessionByToken } from '@/lib/db
 
 export const runtime = 'edge'
 
+// Get current Thailand time
+function getThailandNow(): Date {
+    const now = new Date()
+    // Thailand is UTC+7
+    const thailandOffset = 7 * 60 * 60 * 1000
+    const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000
+    return new Date(utcTime + thailandOffset)
+}
+
 // Public GET - anyone can check election status
 export async function GET() {
     try {
         const status = await getElectionStatus()
 
-        // Check if scheduled time has passed
-        const now = new Date()
+        // Check if scheduled time has passed - use Thailand time
+        const now = getThailandNow()
         let effectiveStatus = status.status
 
         if (status.status === 'scheduled') {
-            if (status.openTime && new Date(status.openTime) <= now) {
-                if (!status.closeTime || new Date(status.closeTime) > now) {
-                    effectiveStatus = 'open'
+            if (status.openTime) {
+                const openTime = new Date(status.openTime)
+                if (openTime <= now) {
+                    if (!status.closeTime || new Date(status.closeTime) > now) {
+                        effectiveStatus = 'open'
+                    } else {
+                        effectiveStatus = 'closed'
+                    }
                 } else {
                     effectiveStatus = 'closed'
                 }
@@ -29,7 +43,8 @@ export async function GET() {
             status: effectiveStatus,
             scheduledOpenTime: status.openTime,
             scheduledCloseTime: status.closeTime,
-            rawStatus: status.status
+            rawStatus: status.status,
+            serverTime: now.toISOString() // For debugging
         })
     } catch (error) {
         console.error('Get election status error:', error)
