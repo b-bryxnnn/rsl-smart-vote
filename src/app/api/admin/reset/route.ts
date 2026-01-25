@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
                 db.prepare('DELETE FROM votes'),
                 db.prepare('DELETE FROM tokens'),
                 db.prepare('DELETE FROM print_logs'),
-                db.prepare('UPDATE students SET has_voted = 0, voted_at = NULL'),
+                db.prepare('UPDATE students SET vote_status = NULL, voted_at = NULL'),
             ])
         } else if (mode === 'students') {
             // Clear only students (dangerous?)
