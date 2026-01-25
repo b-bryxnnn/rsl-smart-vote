@@ -122,6 +122,7 @@ export default function VerifyPage() {
         }
         // Set pending code and show confirmation
         setPendingTokenCode(code.toUpperCase().trim())
+        setError(null)
         setStep('confirm')
     }, [])
 

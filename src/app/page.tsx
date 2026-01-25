@@ -285,7 +285,7 @@ export default function HomePage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl w-full max-w-sm overflow-hidden relative shadow-2xl flex flex-col max-h-[90vh]"
+              className="bg-white rounded-3xl w-full max-w-sm overflow-y-auto relative shadow-2xl flex flex-col max-h-[90vh]"
             >
               {/* Header */}
               <div className="p-4 border-b border-slate-100">
