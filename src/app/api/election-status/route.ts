@@ -75,17 +75,30 @@ export async function POST(request: NextRequest) {
             closeTime?: string
         }
 
+        console.log('Election status update request:', JSON.stringify(body))
+
         if (body.status) {
             await setSystemSetting('election_status', body.status)
         }
+
+        // Always save openTime and closeTime when updating (even if empty string)
         if (body.openTime !== undefined) {
-            await setSystemSetting('election_open_time', body.openTime)
+            console.log('Saving openTime:', body.openTime)
+            await setSystemSetting('election_open_time', body.openTime || '')
         }
         if (body.closeTime !== undefined) {
-            await setSystemSetting('election_close_time', body.closeTime)
+            console.log('Saving closeTime:', body.closeTime)
+            await setSystemSetting('election_close_time', body.closeTime || '')
         }
 
-        return NextResponse.json({ success: true, message: 'อัปเดตสถานะเรียบร้อย' })
+        return NextResponse.json({
+            success: true,
+            message: 'อัปเดตสถานะเรียบร้อย',
+            debug: {
+                receivedOpenTime: body.openTime,
+                receivedCloseTime: body.closeTime
+            }
+        })
     } catch (error) {
         console.error('Update election status error:', error)
         return NextResponse.json(
