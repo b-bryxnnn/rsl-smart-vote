@@ -3,12 +3,20 @@ import { getRequestContext } from '@cloudflare/next-on-pages'
 
 export const runtime = 'edge'
 
+// Get current Thailand time
+function getThailandNow(): Date {
+    const now = new Date()
+    const thailandOffset = 7 * 60 * 60 * 1000
+    const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000
+    return new Date(utcTime + thailandOffset)
+}
+
 export async function GET() {
     try {
         let envInfo = "Attempting to getRequestContext"
         let dbStatus = "Unknown"
         let errorMsg = null
-        let sampleStudents: any[] = []
+        let electionSettings: any[] = []
 
         try {
             const ctx = getRequestContext()
@@ -21,11 +29,11 @@ export async function GET() {
                 if (ctx.env.DB) {
                     dbStatus = "DB binding found"
 
-                    // Query sample students to debug
+                    // Query election settings from system_settings
                     const { results } = await ctx.env.DB.prepare(
-                        'SELECT student_id, prefix, first_name, last_name, level, room FROM students LIMIT 5'
+                        "SELECT key, value, updated_at FROM system_settings WHERE key LIKE 'election%'"
                     ).all()
-                    sampleStudents = results || []
+                    electionSettings = results || []
                 } else {
                     dbStatus = "DB binding MISSING in ctx.env"
                 }
@@ -38,13 +46,16 @@ export async function GET() {
             errorMsg = e.toString()
         }
 
+        const thailandNow = getThailandNow()
+
         return NextResponse.json({
             status: 'Debug Info',
             envInfo,
             dbStatus,
-            sampleStudents,
-            error: errorMsg,
-            timestamp: new Date().toISOString()
+            electionSettings,
+            thailandTime: thailandNow.toISOString(),
+            utcTime: new Date().toISOString(),
+            error: errorMsg
         })
     } catch (error: any) {
         return NextResponse.json({
