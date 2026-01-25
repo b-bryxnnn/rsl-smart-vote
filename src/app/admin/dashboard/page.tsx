@@ -431,7 +431,7 @@ export default function AdminDashboardPage() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${sessionToken}`
                 },
-                body: JSON.stringify({ status, scheduledOpenTime: scheduledOpen, scheduledCloseTime: scheduledClose })
+                body: JSON.stringify({ status, openTime: scheduledOpen, closeTime: scheduledClose })
             })
             const data = await res.json() as any
             if (data.success) {
