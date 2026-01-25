@@ -188,24 +188,35 @@ function parseExcel(base64Data: string): StudentRow[] {
                             ? String(row[colMap['last_name']]).trim()
                             : ''
                     } else if (colMap['name'] !== undefined || colMap['first_name'] !== undefined) {
-                        // Combined name column format - parse from single column
+                        // Combined name column format - check if actual data is in separate columns
                         const nameColIdx = colMap['name'] !== undefined ? colMap['name'] : colMap['first_name']
-                        const fullName = row[nameColIdx] ? String(row[nameColIdx]).trim() : ''
+                        const cellValue = row[nameColIdx] ? String(row[nameColIdx]).trim() : ''
 
-                        // Simple thai prefix removal logic
-                        const prefixes = ['ด.ช.', 'ด.ญ.', 'นาย', 'นางสาว', 'นาง', 'น.ส.']
-                        let coreName = fullName
-                        for (const p of prefixes) {
-                            if (coreName.startsWith(p)) {
-                                prefix = p
-                                coreName = coreName.replace(p, '').trim()
-                                break
+                        // Check if this looks like just a prefix (merged cell case)
+                        // If next columns have data, treat as separate columns
+                        const prefixList = ['ด.ช.', 'ด.ญ.', 'นาย', 'นางสาว', 'นาง', 'น.ส.', 'เด็กชาย', 'เด็กหญิง']
+                        const isJustPrefix = prefixList.includes(cellValue)
+
+                        if (isJustPrefix && row[nameColIdx + 1] && row[nameColIdx + 2]) {
+                            // Merged header case: column has prefix, next columns have first/last name
+                            prefix = cellValue
+                            firstName = String(row[nameColIdx + 1]).trim()
+                            lastName = String(row[nameColIdx + 2]).trim()
+                        } else {
+                            // True combined name - parse from single cell
+                            let coreName = cellValue
+                            for (const p of prefixList) {
+                                if (coreName.startsWith(p)) {
+                                    prefix = p
+                                    coreName = coreName.replace(p, '').trim()
+                                    break
+                                }
                             }
-                        }
 
-                        const nameParts = coreName.split(/\s+/) // Split by whitespace
-                        firstName = nameParts[0] || ''
-                        lastName = nameParts.slice(1).join(' ') || ''
+                            const nameParts = coreName.split(/\s+/) // Split by whitespace
+                            firstName = nameParts[0] || ''
+                            lastName = nameParts.slice(1).join(' ') || ''
+                        }
                     }
 
                     students.push({

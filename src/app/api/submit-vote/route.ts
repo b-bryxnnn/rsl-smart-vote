@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getTokenByCode, completeVoteAndClearLink, createVote, markStudentAsVoted, logActivity } from '@/lib/db'
+import { getTokenByCode, completeVoteAndClearLink, createVote, markStudentAsVoted } from '@/lib/db'
 
 export const runtime = 'edge'
 
@@ -7,9 +7,6 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json() as { token?: string; partyId?: number; isAbstain?: boolean }
         const { token, partyId, isAbstain } = body
-
-        const ip = request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown'
-        const userAgent = request.headers.get('user-agent') || 'unknown'
 
         if (!token) {
             return NextResponse.json(
@@ -66,12 +63,6 @@ export async function POST(request: NextRequest) {
             tokenRecord.id,
             isAbstain || false
         )
-
-        await logActivity('vote_submitted', {
-            stationLevel,
-            isAbstain: isAbstain || false,
-            partyId: isAbstain ? null : partyId
-        }, undefined, undefined, ip, userAgent)
 
         return NextResponse.json({
             success: true,

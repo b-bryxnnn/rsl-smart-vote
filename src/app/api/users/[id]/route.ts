@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserById, updateUser, updateUserPassword, deleteUser, getSessionByToken, logActivity } from '@/lib/db'
+import { getUserById, updateUser, updateUserPassword, deleteUser, getSessionByToken } from '@/lib/db'
 import { hashPassword } from '@/lib/hash'
 
 export const runtime = 'edge'
@@ -86,9 +86,6 @@ export async function PUT(
             await updateUser(userId, updates)
         }
 
-        const ip = request.headers.get('x-forwarded-for') || 'unknown'
-        await logActivity('user_updated', { targetUserId: userId }, admin.id, admin.username, ip)
-
         return NextResponse.json({ success: true, message: 'อัปเดตผู้ใช้สำเร็จ' })
     } catch (error) {
         console.error('Update user error:', error)
@@ -118,9 +115,6 @@ export async function DELETE(
         if (!deleted) {
             return NextResponse.json({ success: false, message: 'ไม่พบผู้ใช้' }, { status: 404 })
         }
-
-        const ip = request.headers.get('x-forwarded-for') || 'unknown'
-        await logActivity('user_deleted', { targetUserId: userId }, admin.id, admin.username, ip)
 
         return NextResponse.json({ success: true, message: 'ลบผู้ใช้สำเร็จ' })
     } catch (error) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAllUsers, createUser, getSessionByToken, logActivity } from '@/lib/db'
+import { getAllUsers, createUser, getSessionByToken } from '@/lib/db'
 import { hashPassword } from '@/lib/hash'
 
 export const runtime = 'edge'
@@ -91,9 +91,6 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             )
         }
-
-        const ip = request.headers.get('x-forwarded-for') || 'unknown'
-        await logActivity('user_created', { newUsername: username, role }, admin.id, admin.username, ip)
 
         return NextResponse.json({
             success: true,

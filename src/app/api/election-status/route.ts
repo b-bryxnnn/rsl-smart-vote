@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getElectionStatus, setSystemSetting, getSessionByToken, logActivity } from '@/lib/db'
+import { getElectionStatus, setSystemSetting, getSessionByToken } from '@/lib/db'
 
 export const runtime = 'edge'
 
@@ -69,13 +69,6 @@ export async function POST(request: NextRequest) {
         if (body.closeTime !== undefined) {
             await setSystemSetting('election_close_time', body.closeTime)
         }
-
-        const ip = request.headers.get('x-forwarded-for') || 'unknown'
-        await logActivity('election_status_changed', {
-            newStatus: body.status,
-            openTime: body.openTime,
-            closeTime: body.closeTime
-        }, result.user.id, result.user.username, ip)
 
         return NextResponse.json({ success: true, message: 'อัปเดตสถานะเรียบร้อย' })
     } catch (error) {
