@@ -3,6 +3,7 @@
 
 import { getRequestContext } from '@cloudflare/next-on-pages'
 import { hashPassword, verifyPassword, generateSessionToken } from './hash'
+import { getThailandSQLDateTime, getThailandISOString } from './utils'
 
 // Types
 export interface User {
@@ -142,11 +143,11 @@ export async function markStudentAsVoted(studentId: string): Promise<void> {
         const student = mockStudents.find(s => s.student_id === studentId)
         if (student) {
             student.vote_status = 'voted'
-            student.voted_at = new Date().toISOString()
+            student.voted_at = getThailandISOString()
         }
         return
     }
-    await db.prepare('UPDATE students SET vote_status = "voted", voted_at = datetime("now") WHERE student_id = ?').bind(studentId).run()
+    await db.prepare('UPDATE students SET vote_status = "voted", voted_at = ? WHERE student_id = ?').bind(getThailandSQLDateTime(), studentId).run()
 }
 
 export async function getStudentVoteStats(): Promise<{ total: number; voted: number }> {
@@ -272,14 +273,14 @@ export async function activateToken(code: string): Promise<boolean> {
         const token = mockTokens.find(t => t.code === code && t.status === 'inactive')
         if (token) {
             token.status = 'activated'
-            token.activated_at = new Date().toISOString()
+            token.activated_at = getThailandISOString()
             return true
         }
         return false
     }
     const result = await db.prepare(
-        'UPDATE tokens SET status = "activated", activated_at = datetime("now") WHERE code = ? AND status = "inactive"'
-    ).bind(code).run()
+        'UPDATE tokens SET status = "activated", activated_at = ? WHERE code = ? AND status = "inactive"'
+    ).bind(getThailandSQLDateTime(), code).run()
     return result.meta.changes > 0
 }
 
@@ -289,14 +290,14 @@ export async function useToken(code: string): Promise<boolean> {
         const token = mockTokens.find(t => t.code === code && t.status === 'activated')
         if (token) {
             token.status = 'used'
-            token.used_at = new Date().toISOString()
+            token.used_at = getThailandISOString()
             return true
         }
         return false
     }
     const result = await db.prepare(
-        'UPDATE tokens SET status = "used", used_at = datetime("now") WHERE code = ? AND status = "activated"'
-    ).bind(code).run()
+        'UPDATE tokens SET status = "used", used_at = ? WHERE code = ? AND status = "activated"'
+    ).bind(getThailandSQLDateTime(), code).run()
     return result.meta.changes > 0
 }
 
@@ -657,10 +658,10 @@ export async function createSession(userId: number, sessionToken: string): Promi
         mockSessions.push(session)
         // Update last login
         const user = mockUsers.find(u => u.id === userId)
-        if (user) user.last_login = new Date().toISOString()
+        if (user) user.last_login = getThailandISOString()
         return session
     }
-    await db.prepare('UPDATE users SET last_login = datetime("now") WHERE id = ?').bind(userId).run()
+    await db.prepare('UPDATE users SET last_login = ? WHERE id = ?').bind(getThailandSQLDateTime(), userId).run()
     const result = await db.prepare(
         'INSERT INTO sessions (user_id, session_token, expires_at) VALUES (?, ?, ?) RETURNING *'
     ).bind(userId, sessionToken, expiresAt).first<Session>()
@@ -764,8 +765,8 @@ export async function setSystemSetting(key: string, value: string): Promise<void
         return
     }
     await db.prepare(
-        'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime("now"))'
-    ).bind(key, value).run()
+        'INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)'
+    ).bind(key, value, getThailandSQLDateTime()).run()
 }
 
 export async function getElectionStatus(): Promise<{ status: string; openTime: string | null; closeTime: string | null }> {
@@ -787,15 +788,15 @@ export async function activateTokenForStudent(code: string, studentId: string, a
             token.status = 'activated'
             token.student_id = studentId
             token.activated_by = activatedBy
-            token.activated_at = new Date().toISOString()
+            token.activated_at = getThailandISOString()
             token.station_level = stationLevel
             return true
         }
         return false
     }
     const result = await db.prepare(
-        'UPDATE tokens SET status = "activated", student_id = ?, activated_by = ?, activated_at = datetime("now"), station_level = ? WHERE code = ? AND status = "inactive"'
-    ).bind(studentId, activatedBy, stationLevel, code).run()
+        'UPDATE tokens SET status = "activated", student_id = ?, activated_by = ?, activated_at = ?, station_level = ? WHERE code = ? AND status = "inactive"'
+    ).bind(studentId, activatedBy, getThailandSQLDateTime(), stationLevel, code).run()
     return result.meta.changes > 0
 }
 
@@ -805,14 +806,14 @@ export async function setTokenVoting(code: string): Promise<boolean> {
         const token = mockTokens.find(t => t.code === code && t.status === 'activated')
         if (token) {
             token.status = 'voting'
-            token.voting_started_at = new Date().toISOString()
+            token.voting_started_at = getThailandISOString()
             return true
         }
         return false
     }
     const result = await db.prepare(
-        'UPDATE tokens SET status = "voting", voting_started_at = datetime("now") WHERE code = ? AND status = "activated"'
-    ).bind(code).run()
+        'UPDATE tokens SET status = "voting", voting_started_at = ? WHERE code = ? AND status = "activated"'
+    ).bind(getThailandSQLDateTime(), code).run()
     return result.meta.changes > 0
 }
 
@@ -824,7 +825,7 @@ export async function completeVoteAndClearLink(code: string): Promise<{ success:
             const studentId = token.student_id
             token.status = 'used'
             token.student_id = null // Clear for anonymity
-            token.used_at = new Date().toISOString()
+            token.used_at = getThailandISOString()
             return { success: true, studentId }
         }
         return { success: false, studentId: null }
@@ -834,8 +835,8 @@ export async function completeVoteAndClearLink(code: string): Promise<{ success:
     if (!token) return { success: false, studentId: null }
 
     const result = await db.prepare(
-        'UPDATE tokens SET status = "used", student_id = NULL, used_at = datetime("now") WHERE code = ? AND status = "voting"'
-    ).bind(code).run()
+        'UPDATE tokens SET status = "used", student_id = NULL, used_at = ? WHERE code = ? AND status = "voting"'
+    ).bind(getThailandSQLDateTime(), code).run()
     return { success: result.meta.changes > 0, studentId: token.student_id }
 }
 
@@ -845,11 +846,11 @@ export async function markStudentAsAbsent(studentId: string): Promise<void> {
         const student = mockStudents.find(s => s.student_id === studentId)
         if (student) {
             student.vote_status = 'absent'
-            student.voted_at = new Date().toISOString()
+            student.voted_at = getThailandISOString()
         }
         return
     }
-    await db.prepare('UPDATE students SET vote_status = "absent", voted_at = datetime("now") WHERE student_id = ?').bind(studentId).run()
+    await db.prepare('UPDATE students SET vote_status = "absent", voted_at = ? WHERE student_id = ?').bind(getThailandSQLDateTime(), studentId).run()
 }
 
 export async function expireOldTokens(timeoutMinutes: number = 30): Promise<{ expiredCount: number; absentStudents: string[] }> {

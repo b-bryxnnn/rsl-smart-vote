@@ -1,5 +1,24 @@
 import QRCode from 'qrcode'
 
+// Get current time in Thailand timezone (UTC+7) as ISO string
+export function getThailandISOString(): string {
+    const now = new Date()
+    // Thailand is UTC+7
+    const thailandOffset = 7 * 60 * 60 * 1000
+    const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000
+    const thailandTime = new Date(utcTime + thailandOffset)
+    return thailandTime.toISOString().replace('Z', '+07:00')
+}
+
+// Get Thailand time for SQLite (without timezone suffix)
+export function getThailandSQLDateTime(): string {
+    const now = new Date()
+    const thailandOffset = 7 * 60 * 60 * 1000
+    const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000
+    const thailandTime = new Date(utcTime + thailandOffset)
+    return thailandTime.toISOString().slice(0, 19).replace('T', ' ')
+}
+
 // Generate random alphanumeric token code in format RSL-XXXX-XXXXXXXX
 export function generateTokenCode(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // Removed confusing chars: I, O, 0, 1
