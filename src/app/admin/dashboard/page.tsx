@@ -425,19 +425,24 @@ export default function AdminDashboardPage() {
 
     const handleUpdateStatus = async (status: 'open' | 'closed' | 'scheduled') => {
         try {
+            console.log('Saving status:', status, 'openTime:', scheduledOpen, 'closeTime:', scheduledClose)
+            const requestBody = { status, openTime: scheduledOpen, closeTime: scheduledClose }
+            console.log('Request body:', JSON.stringify(requestBody))
+
             const res = await fetch('/api/election-status', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${sessionToken}`
                 },
-                body: JSON.stringify({ status, openTime: scheduledOpen, closeTime: scheduledClose })
+                body: JSON.stringify(requestBody)
             })
             const data = await res.json() as any
+            console.log('Response:', data)
             if (data.success) {
                 setElectionStatus(status)
-                setSuccess('อัปเดตสถานะสำเร็จ')
-                setTimeout(() => setSuccess(null), 3000)
+                setSuccess(`อัปเดตสถานะสำเร็จ - openTime: ${scheduledOpen || '(ว่าง)'}`)
+                setTimeout(() => setSuccess(null), 5000)
             } else setError(data.message)
         } catch { setError('อัปเดตล้มเหลว') }
     }
