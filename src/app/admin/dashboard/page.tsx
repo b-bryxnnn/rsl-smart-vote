@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
     Plus, Trash2, Edit2, Printer, History, Users, QrCode,
     CheckCircle, XCircle, Loader2, Save, AlertCircle, RefreshCw,
-    Upload, FileSpreadsheet, LayoutGrid, RotateCcw, ShieldAlert, LogOut, Settings, ClipboardList
+    Upload, FileSpreadsheet, LayoutGrid, RotateCcw, ShieldAlert, LogOut, Settings
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { LoginForm } from '@/components/LoginForm'
@@ -45,7 +45,7 @@ export default function AdminDashboardPage() {
     const [sessionToken, setSessionToken] = useState<string | null>(null)
     const [adminUser, setAdminUser] = useState<{ username: string; displayName: string | null } | null>(null)
 
-    const [activeTab, setActiveTab] = useState<'parties' | 'tokens' | 'students' | 'history' | 'stats' | 'settings' | 'logs'>('parties')
+    const [activeTab, setActiveTab] = useState<'parties' | 'tokens' | 'students' | 'history' | 'stats' | 'settings'>('parties')
     const [parties, setParties] = useState<Party[]>([])
     const [printLogs, setPrintLogs] = useState<PrintLog[]>([])
     const [stats, setStats] = useState<Stats | null>(null)
@@ -71,8 +71,7 @@ export default function AdminDashboardPage() {
     const [scheduledOpen, setScheduledOpen] = useState('')
     const [scheduledClose, setScheduledClose] = useState('')
 
-    // Logs State
-    const [activityLogs, setActivityLogs] = useState<any[]>([])
+
 
     // Token generation state
     const [tokenCount, setTokenCount] = useState('6')
@@ -195,10 +194,6 @@ export default function AdminDashboardPage() {
                 }
             }).catch(console.error)
 
-            // Activity Logs (Auth Required)
-            fetch('/api/activity-logs', { headers }).then(res => res.json()).then((data: any) => {
-                if (data.success) setActivityLogs(data.logs)
-            }).catch(console.error)
 
         } catch (e) {
             console.error(e)
@@ -546,7 +541,6 @@ export default function AdminDashboardPage() {
                         { id: 'history', label: 'ประวัติ', icon: History },
                         { id: 'stats', label: 'สถิติ', icon: AlertCircle },
                         { id: 'settings', label: 'ตั้งค่า & ผู้ใช้', icon: Settings },
-                        { id: 'logs', label: 'Logs', icon: ClipboardList },
                     ].map(tab => (
                         <button
                             key={`tab-${tab.id}`}
@@ -985,42 +979,6 @@ export default function AdminDashboardPage() {
                                     ))}
                                 </tbody>
                             </table>
-                        </div>
-                    </motion.div>
-                )}
-
-                {activeTab === 'logs' && (
-                    <motion.div key="logs-view" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="space-y-6">
-                        <div className="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
-                            <div className="p-6 border-b border-slate-200 bg-slate-50">
-                                <h2 className="text-xl font-bold flex items-center gap-2"><ClipboardList className="w-5 h-5" /> บันทึกการใช้งาน (Activity Logs)</h2>
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead className="bg-slate-50 border-b border-slate-200">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">เวลา</th>
-                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">ผู้ใช้</th>
-                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">กิจกรรม</th>
-                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">รายละเอียด</th>
-                                            <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">IP</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {activityLogs.map(log => (
-                                            <tr key={log.id} className="hover:bg-slate-50">
-                                                <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">
-                                                    {new Date(log.created_at).toLocaleString('th-TH')}
-                                                </td>
-                                                <td className="px-6 py-4 text-sm font-medium text-slate-900">{log.user_username || 'System'}</td>
-                                                <td className="px-6 py-4 text-sm text-slate-700 font-medium">{log.action}</td>
-                                                <td className="px-6 py-4 text-sm text-slate-500 max-w-xs truncate">{log.details}</td>
-                                                <td className="px-6 py-4 text-sm text-slate-400 font-mono text-xs">{log.ip_address}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
                         </div>
                     </motion.div>
                 )}
