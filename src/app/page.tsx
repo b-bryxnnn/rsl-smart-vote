@@ -114,7 +114,7 @@ export default function HomePage() {
       const response = await fetch('/api/validate-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.toUpperCase() }),
+        body: JSON.stringify({ code: code.toUpperCase(), stationLevel }),
       })
 
       const data = await response.json() as any
@@ -347,7 +347,7 @@ export default function HomePage() {
                   <motion.div
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg flex items-center gap-2 text-red-600 text-sm justify-center"
+                    className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm text-center break-words"
                   >
                     <span className="font-bold">Error:</span> {error}
                   </motion.div>

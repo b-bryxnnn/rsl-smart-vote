@@ -779,7 +779,7 @@ export async function getElectionStatus(): Promise<{ status: string; openTime: s
 // ENHANCED TOKEN FUNCTIONS
 // =====================================================
 
-export async function activateTokenForStudent(code: string, studentId: string, activatedBy: number): Promise<boolean> {
+export async function activateTokenForStudent(code: string, studentId: string, activatedBy: number, stationLevel: string): Promise<boolean> {
     const db = getDB()
     if (!db) {
         const token = mockTokens.find(t => t.code === code && t.status === 'inactive')
@@ -788,13 +788,14 @@ export async function activateTokenForStudent(code: string, studentId: string, a
             token.student_id = studentId
             token.activated_by = activatedBy
             token.activated_at = new Date().toISOString()
+            token.station_level = stationLevel
             return true
         }
         return false
     }
     const result = await db.prepare(
-        'UPDATE tokens SET status = "activated", student_id = ?, activated_by = ?, activated_at = datetime("now") WHERE code = ? AND status = "inactive"'
-    ).bind(studentId, activatedBy, code).run()
+        'UPDATE tokens SET status = "activated", student_id = ?, activated_by = ?, activated_at = datetime("now"), station_level = ? WHERE code = ? AND status = "inactive"'
+    ).bind(studentId, activatedBy, stationLevel, code).run()
     return result.meta.changes > 0
 }
 

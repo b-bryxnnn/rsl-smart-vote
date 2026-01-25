@@ -5,8 +5,8 @@ export const runtime = 'edge'
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json() as { code?: string }
-        const { code } = body
+        const body = await request.json() as { code?: string; stationLevel?: string }
+        const { code, stationLevel } = body
 
         if (!code || typeof code !== 'string') {
             return NextResponse.json(
@@ -84,6 +84,18 @@ export async function POST(request: NextRequest) {
                 )
 
             case 'activated':
+                // Check station level restriction
+                // If stationLevel is provided (from scanning device) and token has station_level set
+                if (stationLevel && token.station_level && stationLevel !== token.station_level) {
+                    return NextResponse.json(
+                        {
+                            success: false,
+                            message: `บัตรนี้เปิดสิทธิ์สำหรับ ${token.station_level} ไม่สามารถใช้ที่จุดลงคะแนน ${stationLevel} ได้`
+                        },
+                        { status: 400 }
+                    )
+                }
+
                 // Valid token - change status to 'voting'
                 const updated = await setTokenVoting(cleanCode)
                 if (!updated) {

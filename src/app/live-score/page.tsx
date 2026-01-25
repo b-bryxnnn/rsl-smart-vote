@@ -1,23 +1,41 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { Trophy, Loader2, RefreshCw, AlertCircle } from 'lucide-react'
+import { Trophy, Loader2, RefreshCw, AlertCircle, Clock } from 'lucide-react'
 
 export default function LiveScorePage() {
     const [data, setData] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null)
+    const [lastVoteCount, setLastVoteCount] = useState<number>(0)
+    const [nextUpdateIn, setNextUpdateIn] = useState<number>(300) // 5 minutes in seconds
 
-    const fetchScores = async () => {
+    const UPDATE_INTERVAL_SECONDS = 300 // 5 minutes
+    const VOTE_THRESHOLD = 10 // Update if 10 new votes
+
+    const fetchScores = useCallback(async (force = false) => {
+        // Don't update if not forced and no reason to update
+        if (!force && data && lastVoteCount === data.totalVotes) {
+            return // No new votes, skip update
+        }
+
         setLoading(true)
         setError(null)
         try {
             const res = await fetch('/api/scores')
             const json = await res.json() as any
             if (json.success) {
-                setData(json.data)
+                const newTotalVotes = json.data.totalVotes || 0
+
+                // Only actually update state if there are new votes or first load
+                if (!data || newTotalVotes > lastVoteCount) {
+                    setData(json.data)
+                    setLastUpdateTime(new Date())
+                    setLastVoteCount(newTotalVotes)
+                }
             } else {
                 setError(json.message || 'ไม่สามารถโหลดข้อมูลได้')
             }
@@ -26,13 +44,55 @@ export default function LiveScorePage() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [data, lastVoteCount])
 
+    // Check for updates conditionally
+    const checkForUpdates = useCallback(async () => {
+        try {
+            const res = await fetch('/api/scores')
+            const json = await res.json() as any
+            if (json.success) {
+                const newTotalVotes = json.data.totalVotes || 0
+                const voteDiff = newTotalVotes - lastVoteCount
+
+                // Update if: 10+ new votes OR it's the first load
+                if (voteDiff >= VOTE_THRESHOLD || !data) {
+                    setData(json.data)
+                    setLastUpdateTime(new Date())
+                    setLastVoteCount(newTotalVotes)
+                    setNextUpdateIn(UPDATE_INTERVAL_SECONDS)
+                }
+            }
+        } catch {
+            // Silently fail - will retry next interval
+        }
+    }, [data, lastVoteCount])
+
+    // Initial load
     useEffect(() => {
-        fetchScores()
-        const interval = setInterval(fetchScores, 10000)
-        return () => clearInterval(interval)
+        fetchScores(true)
     }, [])
+
+    // Timer effect - check every 5 minutes
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setNextUpdateIn(prev => {
+                if (prev <= 1) {
+                    checkForUpdates()
+                    return UPDATE_INTERVAL_SECONDS
+                }
+                return prev - 1
+            })
+        }, 1000)
+
+        return () => clearInterval(timer)
+    }, [checkForUpdates])
+
+    const formatTimeRemaining = (seconds: number) => {
+        const mins = Math.floor(seconds / 60)
+        const secs = seconds % 60
+        return `${mins}:${secs.toString().padStart(2, '0')}`
+    }
 
     const chartData = data?.partyVotes?.map((p: any) => ({
         name: p.name,
@@ -67,7 +127,7 @@ export default function LiveScorePage() {
                     <p className="text-gray-700 font-medium mb-2">เกิดข้อผิดพลาด</p>
                     <p className="text-gray-500 mb-4">{error}</p>
                     <button
-                        onClick={fetchScores}
+                        onClick={() => fetchScores(true)}
                         className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 flex items-center gap-2 mx-auto"
                     >
                         <RefreshCw className="w-4 h-4" /> ลองใหม่
@@ -82,9 +142,29 @@ export default function LiveScorePage() {
             <header className="mb-12 text-center">
                 <h1 className="text-3xl font-bold text-gray-900">ผลคะแนนเลือกตั้ง 2569</h1>
                 <p className="text-gray-500 mt-2">
-                    Update Realtime • Total Votes: {data?.totalVotes || 0}
+                    Total Votes: {data?.totalVotes || 0}
                     {loading && <Loader2 className="w-4 h-4 animate-spin inline ml-2" />}
                 </p>
+                {/* Update info */}
+                <div className="mt-3 flex items-center justify-center gap-4 text-sm">
+                    <span className="text-gray-400 flex items-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        อัพเดทถัดไปใน: {formatTimeRemaining(nextUpdateIn)}
+                    </span>
+                    <button
+                        onClick={() => fetchScores(true)}
+                        disabled={loading}
+                        className="text-blue-600 hover:text-blue-800 flex items-center gap-1 disabled:opacity-50"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                        รีเฟรชตอนนี้
+                    </button>
+                </div>
+                {lastUpdateTime && (
+                    <p className="text-xs text-gray-400 mt-1">
+                        อัพเดทล่าสุด: {lastUpdateTime.toLocaleTimeString('th-TH')}
+                    </p>
+                )}
             </header>
 
             {chartData.length === 0 ? (
@@ -120,9 +200,13 @@ export default function LiveScorePage() {
                             </div>
                         ))}
                     </div>
+
+                    {/* Info about update policy */}
+                    <div className="mt-8 text-center text-gray-400 text-xs">
+                        <p>ระบบอัพเดททุก 5 นาที หรือเมื่อมีโหวตเข้ามา 10 ครั้ง (เพื่อประหยัด quota)</p>
+                    </div>
                 </>
             )}
         </div>
     )
 }
-

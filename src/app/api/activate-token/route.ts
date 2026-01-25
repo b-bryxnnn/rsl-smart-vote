@@ -5,8 +5,8 @@ export const runtime = 'edge'
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json() as { tokenCode?: string; studentId?: string; sessionToken?: string }
-        const { tokenCode, studentId, sessionToken } = body
+        const body = await request.json() as { tokenCode?: string; studentId?: string; sessionToken?: string; stationLevel?: string }
+        const { tokenCode, studentId, sessionToken, stationLevel } = body
 
         // Verify user session (committee or admin)
         if (!sessionToken) {
@@ -85,7 +85,8 @@ export async function POST(request: NextRequest) {
         }
 
         // Activate token with student link (temporary - will be cleared after vote)
-        const activated = await activateTokenForStudent(cleanCode, studentId, user.id)
+        // Use student's level as station_level for vote breakdown
+        const activated = await activateTokenForStudent(cleanCode, studentId, user.id, stationLevel || student.level)
 
         if (!activated) {
             return NextResponse.json(

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, Loader2, SwitchCamera, AlertTriangle, Clock } from 'lucide-react'
+import { CheckCircle, Loader2, SwitchCamera, Clock, AlertTriangle } from 'lucide-react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { LoginForm } from '@/components/LoginForm'
 import { SystemClosedOverlay } from '@/components/SystemClosedOverlay'
@@ -29,6 +29,7 @@ export default function VerifyPage() {
     const [step, setStep] = useState<'search' | 'verify' | 'confirm' | 'scan' | 'success'>('search')
     const [studentId, setStudentId] = useState('')
     const [tokenCode, setTokenCode] = useState('')
+    const [pendingTokenCode, setPendingTokenCode] = useState<string | null>(null) // For confirmation
     const [student, setStudent] = useState<Student | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -113,35 +114,55 @@ export default function VerifyPage() {
         } finally { setLoading(false) }
     }
 
-    const activateToken = useCallback(async (code: string) => {
-        if (!sessionToken) return
+    // When QR scanned, show confirmation instead of activating immediately
+    const onQRScanned = useCallback((code: string) => {
+        // Stop scanner
+        if (scannerRef.current?.isScanning) {
+            scannerRef.current.stop().catch(() => { })
+        }
+        // Set pending code and show confirmation
+        setPendingTokenCode(code.toUpperCase().trim())
+        setStep('confirm')
+    }, [])
+
+    // Actually activate the token after confirmation
+    const confirmActivation = async () => {
+        if (!sessionToken || !pendingTokenCode || !student) return
         setLoading(true)
         setError(null)
-        setTokenCode(code)
+        setTokenCode(pendingTokenCode)
         try {
             const res = await fetch('/api/activate-token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    tokenCode: code,
-                    studentId: student?.student_id,
-                    sessionToken
+                    tokenCode: pendingTokenCode,
+                    studentId: student.student_id,
+                    sessionToken,
+                    stationLevel: student.level // Pass student's level for vote breakdown
                 })
             })
             const data = await res.json() as any
             if (data.success) {
-                if (scannerRef.current?.isScanning) scannerRef.current.stop()
                 setStep('success')
                 setTimeout(reset, 3000)
             } else {
                 setError(data.message)
+                setStep('scan')
                 setTimeout(() => { restartScanner() }, 2000)
             }
         } catch {
             setError('การเชื่อมต่อล้มเหลว')
+            setStep('scan')
             setTimeout(() => { restartScanner() }, 2000)
         } finally { setLoading(false) }
-    }, [sessionToken, student])
+    }
+
+    const cancelConfirmation = () => {
+        setPendingTokenCode(null)
+        setStep('scan')
+        setTimeout(() => { restartScanner() }, 300)
+    }
 
     const restartScanner = useCallback(async () => {
         if (scannerRef.current?.isScanning) {
@@ -159,14 +180,14 @@ export default function VerifyPage() {
             await scanner.start(
                 { facingMode },
                 { fps: 10, qrbox: { width: 220, height: 220 } },
-                activateToken,
+                onQRScanned,
                 () => { }
             )
         } catch (e) {
             console.error("Scanner restart failed", e)
             setError('ไม่สามารถเปิดกล้องได้')
         }
-    }, [facingMode, activateToken])
+    }, [facingMode, onQRScanned])
 
     const startScanner = async () => {
         setStep('scan')
@@ -175,7 +196,7 @@ export default function VerifyPage() {
             const scanner = new Html5Qrcode('verify-scanner')
             scannerRef.current = scanner
             try {
-                await scanner.start({ facingMode }, { fps: 10, qrbox: { width: 220, height: 220 } }, activateToken, () => { })
+                await scanner.start({ facingMode }, { fps: 10, qrbox: { width: 220, height: 220 } }, onQRScanned, () => { })
             } catch (e) {
                 console.error("Scanner failed", e)
                 setError('ไม่สามารถเปิดกล้องได้')
@@ -200,7 +221,7 @@ export default function VerifyPage() {
                 await scanner.start(
                     { facingMode: newFacingMode },
                     { fps: 10, qrbox: { width: 220, height: 220 } },
-                    activateToken,
+                    onQRScanned,
                     () => { }
                 )
             } catch (e) {
@@ -215,6 +236,7 @@ export default function VerifyPage() {
         setStudentId('')
         setStudent(null)
         setTokenCode('')
+        setPendingTokenCode(null)
         setError(null)
         if (scannerRef.current?.isScanning) scannerRef.current.stop().catch(() => { })
     }
@@ -337,6 +359,71 @@ export default function VerifyPage() {
                                 </motion.div>
                             )}
                             <button onClick={reset} className="w-full mt-4 py-4 text-gray-500 font-medium">ยกเลิก</button>
+                        </motion.div>
+                    )}
+
+                    {/* NEW: Confirmation Dialog */}
+                    {step === 'confirm' && student && pendingTokenCode && (
+                        <motion.div
+                            key="confirm"
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="w-full"
+                        >
+                            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 text-center">
+                                <div className="w-20 h-20 bg-amber-100 rounded-full mx-auto mb-4 flex items-center justify-center">
+                                    <AlertTriangle className="w-10 h-10 text-amber-600" />
+                                </div>
+
+                                <h2 className="text-xl font-bold text-gray-900 mb-2">ยืนยันเปิดสิทธิ์</h2>
+
+                                <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-2">
+                                    <p className="text-gray-600">
+                                        <span className="text-gray-400 text-sm">ชื่อนักเรียน:</span><br />
+                                        <span className="font-bold text-lg text-gray-900">{student.prefix}{student.first_name} {student.last_name}</span>
+                                    </p>
+                                    <p className="text-gray-600">
+                                        <span className="text-gray-400 text-sm">รหัสนักเรียน:</span><br />
+                                        <span className="font-semibold">{student.student_id}</span>
+                                    </p>
+                                    <p className="text-gray-600">
+                                        <span className="text-gray-400 text-sm">ระดับชั้น:</span><br />
+                                        <span className="font-semibold">{student.level} ห้อง {student.room}</span>
+                                    </p>
+                                </div>
+
+                                <div className="bg-blue-50 rounded-xl p-3 mb-6">
+                                    <p className="text-blue-800 text-sm">
+                                        <span className="text-blue-500 text-xs">เลขที่บัตรเลือกตั้ง:</span><br />
+                                        <span className="font-mono font-bold text-lg">{pendingTokenCode}</span>
+                                    </p>
+                                </div>
+
+                                {error && (
+                                    <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm">
+                                        {error}
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={cancelConfirmation}
+                                        disabled={loading}
+                                        className="py-4 text-gray-500 font-medium hover:bg-gray-50 rounded-xl border border-gray-200 disabled:opacity-50"
+                                    >
+                                        ยกเลิก
+                                    </button>
+                                    <button
+                                        onClick={confirmActivation}
+                                        disabled={loading}
+                                        className="py-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                                    >
+                                        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                                        ยืนยันเปิดสิทธิ์
+                                    </button>
+                                </div>
+                            </div>
                         </motion.div>
                     )}
 
