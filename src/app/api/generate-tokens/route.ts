@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createTokens, createPrintLog } from '@/lib/db'
 import { generateTokenCodes, generateBatchId } from '@/lib/utils'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
     try {

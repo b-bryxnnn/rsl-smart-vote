@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRequestContext } from '@cloudflare/next-on-pages'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 // Get current Thailand time
 function getThailandNow(): Date {

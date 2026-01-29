@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateTokenCodes, generateBatchId } from '@/lib/utils'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 // Preview only - does NOT save to database
 export async function POST(request: NextRequest) {

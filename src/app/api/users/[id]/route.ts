@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserById, updateUser, updateUserPassword, deleteUser, getSessionByToken } from '@/lib/db'
 import { hashPassword } from '@/lib/hash'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 async function requireAdmin(request: NextRequest) {
     const authHeader = request.headers.get('authorization')

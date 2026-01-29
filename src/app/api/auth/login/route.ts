@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserByUsername, createSession } from '@/lib/db'
 import { verifyPassword, generateSessionToken } from '@/lib/hash'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
     try {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAllUsers, createUser } from '@/lib/db'
 import { hashPassword } from '@/lib/hash'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 // This API creates the first admin user
 // Only works when there are NO users in the database

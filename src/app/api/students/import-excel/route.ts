@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@cloudflare/next-on-pages'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 // Parse Thai prefix from name
 function parseThaiName(fullName: string): { prefix: string; firstName: string; lastName: string } {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getElectionStatus, setSystemSetting, getSessionByToken } from '@/lib/db'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 // Get current Thailand time
 function getThailandNow(): Date {

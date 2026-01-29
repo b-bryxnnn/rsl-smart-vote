@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createTokens, createPrintLog } from '@/lib/db'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 // Confirm print - saves tokens to database
 export async function POST(request: NextRequest) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getRequestContext } from '@cloudflare/next-on-pages'
 import * as XLSX from 'xlsx'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 interface StudentRow {
     student_id: string

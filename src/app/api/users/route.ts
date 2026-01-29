@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAllUsers, createUser, getSessionByToken } from '@/lib/db'
 import { hashPassword } from '@/lib/hash'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 // Middleware to check admin auth
 async function requireAdmin(request: NextRequest) {

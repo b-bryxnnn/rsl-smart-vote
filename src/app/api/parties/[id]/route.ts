@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { updateParty, deleteParty } from '@/lib/db'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export async function PUT(
     request: NextRequest,
