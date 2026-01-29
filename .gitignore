@@ -30,12 +30,13 @@ yarn-error.log*
 # Vercel
 .vercel
 
+# Cloudflare (legacy)
+.wrangler
+
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
-# Database
+# Local data
 data/
-*.db
-*.db-wal
-*.db-shm
+

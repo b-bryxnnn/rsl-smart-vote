@@ -4,16 +4,65 @@
 
 ## 🚀 วิธีติดตั้ง
 
+### Development
+
 ```bash
 # 1. ติดตั้ง dependencies
 npm install
 
-# 2. รัน development server
+# 2. สร้างไฟล์ .env.local
+cp .env.example .env.local
+# แก้ไข DATABASE_URL ให้ชี้ไป PostgreSQL ของคุณ
+
+# 3. รัน migration เพื่อสร้างตาราง
+npm run migrate
+
+# 4. รัน development server
 npm run dev
 
-# 3. เปิดเบราว์เซอร์ไปที่
+# 5. เปิดเบราว์เซอร์ไปที่
 # http://localhost:3000
 ```
+
+### Production (Coolify)
+
+ตั้งค่า Environment Variables:
+```
+DATABASE_URL=postgresql://user:password@postgres-host:5432/rsl_vote
+```
+
+Build Command:
+```bash
+npm install && npm run build
+```
+
+Start Command (ตารางจะงอกเองอัตโนมัติ):
+```bash
+npm run start:prod
+```
+
+## 🗄️ Database
+
+ระบบใช้ **PostgreSQL 17** เป็นฐานข้อมูล
+
+### Migration
+
+```bash
+# รัน migration (สร้าง/อัพเดทตาราง)
+npm run migrate
+```
+
+### ตาราง
+- `users` - Admin และ Committee
+- `sessions` - Session tokens
+- `students` - ข้อมูลนักเรียน
+- `parties` - พรรคที่ลงเลือกตั้ง
+- `tokens` - บัตรเลือกตั้ง
+- `votes` - คะแนนเสียง
+- `print_logs` - ประวัติการพิมพ์บัตร
+- `activity_logs` - Log การใช้งาน
+- `system_settings` - ตั้งค่าระบบ
+- `rate_limits` - ป้องกัน brute force
 
 ## 📂 โครงสร้างระบบ
 
@@ -29,8 +78,10 @@ src/
 │   ├── live-score/           # แสดงผลคะแนน (จอ LED)
 │   └── api/                  # API Routes
 ├── lib/
-│   ├── db.ts                 # Database utilities
+│   ├── db.ts                 # Database utilities (PostgreSQL)
 │   └── utils.ts              # Helper functions
+scripts/
+└── migrate.js                # Auto-migration script
 ```
 
 ## 🔐 หน้าต่างๆ
@@ -75,7 +126,7 @@ src/
 
 ## 🗃️ นำเข้าข้อมูลนักเรียน
 
-สร้างไฟล์ CSV แล้วใส่ใน Database:
+รองรับการนำเข้าจากไฟล์ Excel หรือ CSV:
 
 ```csv
 student_id,prefix,first_name,last_name,level,room
@@ -85,16 +136,17 @@ student_id,prefix,first_name,last_name,level,room
 
 ## ⚠️ หมายเหตุ
 
-- Token มี 3 สถานะ: `inactive` → `activated` → `used`
+- Token มี 5 สถานะ: `inactive` → `activated` → `voting` → `used` / `expired`
 - บัตรที่ยังไม่ activate ใช้โหวตไม่ได้
 - 1 นักเรียน = 1 สิทธิ์
-- ไม่มีการผูก Token กับตัวตนเพื่อรักษาความลับ
+- ไม่มีการผูก Token กับตัวตนหลังโหวตเพื่อรักษาความลับ
 
 ## 🛠️ Tech Stack
 
-- Next.js 15 (App Router)
-- Tailwind CSS
-- SQLite (better-sqlite3)
-- Framer Motion
-- Recharts
-- html5-qrcode
+- **Next.js 15** (App Router)
+- **PostgreSQL 17** (Database)
+- **Tailwind CSS 4**
+- **Framer Motion** (Animations)
+- **Recharts** (Charts)
+- **html5-qrcode** (QR Scanner)
+

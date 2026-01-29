@@ -1,13 +1,14 @@
-// Type definitions for Cloudflare D1 bindings
-
-interface CloudflareEnv {
-    DB: D1Database
-}
+// Type definitions for environment variables
+// PostgreSQL Database Configuration
 
 declare global {
-    interface CloudflareEnv {
-        DB: D1Database
+    namespace NodeJS {
+        interface ProcessEnv {
+            DATABASE_URL: string;
+            NODE_ENV: 'development' | 'production' | 'test';
+        }
     }
 }
 
 export { }
+
