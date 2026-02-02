@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getRequestContext } from '@cloudflare/next-on-pages'
 import * as XLSX from 'xlsx'
+import { importStudentsBatch, getStudentVoteStats } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
@@ -15,7 +15,7 @@ interface StudentRow {
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json() as any
+        const body = await request.json() as { fileType?: string; fileData?: string; csvData?: string }
         const { fileType, fileData, csvData } = body
 
         let students: StudentRow[] = []
@@ -41,40 +41,17 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Insert into D1 database
-        const { env } = getRequestContext()
-        const db = env.DB
-
-        // Insert students (skip duplicates)
-        const stmt = db.prepare(
-            'INSERT OR IGNORE INTO students (student_id, prefix, first_name, last_name, level, room) VALUES (?, ?, ?, ?, ?, ?)'
-        )
-
-        // Process in batches of 50 to avoid SQL limits
-        const chunkSize = 50
-        let successCount = 0
-
-        for (let i = 0; i < students.length; i += chunkSize) {
-            const chunk = students.slice(i, i + chunkSize)
-            const batch = chunk.map(s =>
-                stmt.bind(s.student_id, s.prefix, s.first_name, s.last_name, s.level, s.room)
-            )
-            try {
-                await db.batch(batch)
-                successCount += chunk.length
-            } catch (err) {
-                console.error('Batch insert error:', err)
-            }
-        }
+        // Insert into PostgreSQL database
+        await importStudentsBatch(students)
 
         // Get total count
-        const countResult = await db.prepare('SELECT COUNT(*) as count FROM students').first<{ count: number }>()
+        const stats = await getStudentVoteStats()
 
         return NextResponse.json({
             success: true,
-            message: `นำเข้าสำเร็จ ${successCount} รายการ`,
-            count: successCount,
-            total: countResult?.count || 0,
+            message: `นำเข้าสำเร็จ ${students.length} รายการ`,
+            count: students.length,
+            total: stats.total,
         })
     } catch (error: any) {
         console.error('Error importing students:', error)

@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getRequestContext } from '@cloudflare/next-on-pages'
+import { clearPrintLogs } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
 export async function POST() {
     try {
-        const { env } = getRequestContext()
-        const db = env.DB
-
-        await db.prepare('DELETE FROM print_logs').run()
+        await clearPrintLogs()
 
         return NextResponse.json({ success: true, message: 'ลบประวัติการพิมพ์เรียบร้อย' })
     } catch (error) {

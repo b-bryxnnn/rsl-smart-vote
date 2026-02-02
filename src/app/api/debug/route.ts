@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getRequestContext } from '@cloudflare/next-on-pages'
+import { getDebugElectionSettings } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
@@ -13,36 +13,14 @@ function getThailandNow(): Date {
 
 export async function GET() {
     try {
-        let envInfo = "Attempting to getRequestContext"
-        let dbStatus = "Unknown"
+        let dbStatus = "Connected"
         let errorMsg = null
-        let electionSettings: any[] = []
+        let electionSettings: { key: string; value: string; updated_at: Date }[] = []
 
         try {
-            const ctx = getRequestContext()
-            envInfo = "Context retrieved"
-
-            if (ctx.env) {
-                const keys = Object.keys(ctx.env)
-                envInfo += `. Env keys: ${keys.join(', ')}`
-
-                if (ctx.env.DB) {
-                    dbStatus = "DB binding found"
-
-                    // Query election settings from system_settings
-                    const { results } = await ctx.env.DB.prepare(
-                        "SELECT key, value, updated_at FROM system_settings WHERE key LIKE 'election%'"
-                    ).all()
-                    electionSettings = results || []
-                } else {
-                    dbStatus = "DB binding MISSING in ctx.env"
-                }
-            } else {
-                envInfo += ". ctx.env is undefined"
-            }
-
+            electionSettings = await getDebugElectionSettings()
         } catch (e: any) {
-            envInfo = "Error calling getRequestContext: " + e.message
+            dbStatus = "Error: " + e.message
             errorMsg = e.toString()
         }
 
@@ -50,7 +28,6 @@ export async function GET() {
 
         return NextResponse.json({
             status: 'Debug Info',
-            envInfo,
             dbStatus,
             electionSettings,
             thailandTime: thailandNow.toISOString(),

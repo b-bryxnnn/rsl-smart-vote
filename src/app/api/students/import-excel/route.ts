@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getRequestContext } from '@cloudflare/next-on-pages'
+import { importStudentsBatch } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
@@ -26,7 +26,7 @@ function parseThaiName(fullName: string): { prefix: string; firstName: string; l
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json() as any
+        const body = await request.json() as { data?: any[]; level?: string }
         const { data, level } = body
 
         if (!data || !Array.isArray(data) || data.length === 0) {
@@ -37,12 +37,9 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, message: 'กรุณาระบุระดับชั้น' }, { status: 400 })
         }
 
-        const { env } = getRequestContext()
-        const db = env.DB
-
         let currentRoom = '1'
         let lastRowNum = 0
-        let addedCount = 0
+        const studentsToImport: { student_id: string; prefix: string; first_name: string; last_name: string; level: string; room: string }[] = []
 
         // Process students one by one
         for (const row of data) {
@@ -58,20 +55,22 @@ export async function POST(request: NextRequest) {
 
             const { prefix, firstName, lastName } = parseThaiName(row.name)
 
-            try {
-                await db.prepare(
-                    'INSERT OR REPLACE INTO students (student_id, prefix, first_name, last_name, level, room) VALUES (?, ?, ?, ?, ?, ?)'
-                ).bind(row.student_id, prefix, firstName, lastName, level, row.room || currentRoom).run()
-                addedCount++
-            } catch (e) {
-                console.error('Error inserting student:', e)
-            }
+            studentsToImport.push({
+                student_id: row.student_id,
+                prefix,
+                first_name: firstName,
+                last_name: lastName,
+                level,
+                room: row.room || currentRoom
+            })
         }
+
+        await importStudentsBatch(studentsToImport)
 
         return NextResponse.json({
             success: true,
-            count: addedCount,
-            message: `นำเข้านักเรียน ${level} จำนวน ${addedCount} คน`
+            count: studentsToImport.length,
+            message: `นำเข้านักเรียน ${level} จำนวน ${studentsToImport.length} คน`
         })
     } catch (error) {
         console.error('Error importing Excel data:', error)

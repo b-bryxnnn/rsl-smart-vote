@@ -1,36 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getRequestContext } from '@cloudflare/next-on-pages'
+import { resetDatabase } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json() as any
-        const { mode } = body // 'all' | 'votes'
+        const body = await request.json() as { mode?: 'all' | 'votes' | 'students' }
+        const { mode } = body
 
-        const { env } = getRequestContext()
-        const db = env.DB
-
-        if (mode === 'all') {
-            // Reset everything - clear all tables
-            await db.batch([
-                db.prepare('DELETE FROM votes'),
-                db.prepare('DELETE FROM tokens'),
-                db.prepare('DELETE FROM print_logs'),
-                db.prepare('DELETE FROM students'), // Clear students too
-            ])
-        } else if (mode === 'votes') {
-            // Clear votes, tokens, and reset student vote status
-            await db.batch([
-                db.prepare('DELETE FROM votes'),
-                db.prepare('DELETE FROM tokens'),
-                db.prepare('DELETE FROM print_logs'),
-                db.prepare('UPDATE students SET vote_status = NULL, voted_at = NULL'),
-            ])
-        } else if (mode === 'students') {
-            // Clear only students (dangerous?)
-            await db.prepare('DELETE FROM students').run()
+        if (!mode || !['all', 'votes', 'students'].includes(mode)) {
+            return NextResponse.json({ success: false, message: 'กรุณาระบุโหมดที่ถูกต้อง' }, { status: 400 })
         }
+
+        await resetDatabase(mode)
 
         return NextResponse.json({ success: true, message: 'รีเซ็ตระบบเรียบร้อย' })
     } catch (error) {
