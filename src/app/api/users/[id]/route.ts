@@ -40,7 +40,7 @@ export async function GET(
                 username: user.username,
                 role: user.role,
                 displayName: user.display_name,
-                isActive: user.is_active === 1,
+                isActive: user.is_active,
                 createdAt: user.created_at,
                 lastLogin: user.last_login
             }
@@ -80,7 +80,7 @@ export async function PUT(
         const updates: any = {}
         if (body.displayName !== undefined) updates.display_name = body.displayName
         if (body.role !== undefined) updates.role = body.role
-        if (body.isActive !== undefined) updates.is_active = body.isActive ? 1 : 0
+        if (body.isActive !== undefined) updates.is_active = body.isActive
 
         if (Object.keys(updates).length > 0) {
             await updateUser(userId, updates)
