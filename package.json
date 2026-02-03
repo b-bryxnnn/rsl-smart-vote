@@ -8,9 +8,11 @@
     "start": "next start",
     "start:prod": "node scripts/migrate.js && next start",
     "migrate": "node scripts/migrate.js",
+    "postinstall": "prisma generate || echo 'Prisma generate skipped'",
     "lint": "next lint"
   },
   "dependencies": {
+    "@prisma/client": "^6.3.1",
     "dotenv": "^16.4.7",
     "framer-motion": "^11.15.0",
     "html5-qrcode": "^2.3.8",
@@ -33,6 +35,7 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.1.0",
+    "prisma": "^6.19.2",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0"
   }
