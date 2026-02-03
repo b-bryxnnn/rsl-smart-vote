@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
             username: u.username,
             role: u.role,
             displayName: u.display_name,
-            isActive: u.is_active === 1,
+            isActive: u.is_active,
             createdAt: u.created_at,
             lastLogin: u.last_login
         }))
